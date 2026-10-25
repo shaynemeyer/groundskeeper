@@ -1,0 +1,656 @@
+# Groundskeeper — Implementation Plan
+
+**Groundskeeper** is a Lot86 terminal tool for keeping a Mac's disk free of clutter. The command is `groundskeeper`, with a short alias `gk`.
+
+It runs twice a week on macOS and generates an HTML report of disk space that can be reclaimed: caches, AI models, stale build artifacts, toolchains, and old downloads. With an iPhone plugged in over USB, it also reports and cleans up the phone's apps, shared files and duplicate photos. This replaces the separate iPhone app idea.
+
+## Goals
+
+- **The scan is read-only.** The scheduled report never deletes anything; it only suggests cleanup commands. Cleanup happens only through explicit `clean` subcommands that you run yourself: browser caches (see [Browser cleanup](#browser-cleanup-opt-in)), iPhone apps and duplicate photos (see [iPhone mode](#iphone-mode)).
+- **One Go binary, few dependencies.** The scanners use the standard library, with the HTML template embedded via `go:embed`. iPhone mode adds `go-ios` (pure Go, talks to the phone over USB) and a small Swift helper for the photo work that only Apple frameworks can do. The CLI uses Cobra with Charm's Fang, Lip Gloss and Bubble Tea (see [Command-line interface](#command-line-interface)).
+- **A CLI that explains itself.** Grouped commands, rich help with examples and safety notes on every command, styled output, and shell completion.
+- **Runs unattended** twice a week via launchd, and posts a macOS notification when the report is ready.
+- **Tracks trends** by comparing each run with the previous one, so slow growth gets noticed early.
+- **Keeps private data private.** It measures sizes without reading contents, makes no network requests, and never puts secrets in its output (see [Security and privacy](#security-and-privacy)).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  L["launchd (Mon and Thu)"] --> R[groundskeeper]
+  R --> S1[Caches]
+  R --> S2[AI models]
+  R --> S3[Build artifacts]
+  R --> S4["Toolchains and Downloads"]
+  R --> S5["iPhone over USB"]
+  S5 --> A
+  S1 --> A["Aggregate and classify"]
+  S2 --> A
+  S3 --> A
+  S4 --> A
+  H[("Previous snapshot")] --> A
+  A --> O1[HTML report]
+  A --> O2[Snapshot JSON]
+  A --> O3[macOS notification]
+```
+
+## Scanners
+
+Each scanner implements a small interface:
+
+```go
+type Scanner interface {
+    Name() string
+    Scan(ctx context.Context, home string) ([]Item, error)
+}
+
+type Item struct {
+    Section string // "Caches", "AI models", ...
+    Label   string // display name
+    Path    string
+    Bytes   int64
+    Safety  string // "safe" | "review" | "keep"
+    Hint    string // suggested cleanup command (never executed)
+    Note    string // e.g. "untouched 165 days"
+}
+```
+
+| Scanner | What it finds | Safety | Example hint |
+|---|---|---|---|
+| **Disk** | Free/total space via `statfs` | — | — |
+| **Caches** | `~/.npm`, Homebrew, pip, `go-build`, Playwright, Puppeteer, bun, NuGet, Cargo registry, top children of `~/Library/Caches` | safe | `npm cache clean --force`, `brew cleanup --prune=all` |
+| **AI models: Ollama** | Per-model size and pull date read from `~/.ollama/models/manifests`; orphaned blobs (blob total minus referenced layers) | review | `ollama rm <model:tag>` |
+| **AI models: Hugging Face** | Per-repo size of `models--*` / `datasets--*` in `~/.cache/huggingface/hub` | review | `hf cache rm model/<org>/<name>` |
+| **AI models: other** | `~/.lmstudio`, ComfyUI model folders if present | review | — |
+| **Build artifacts** | See below | safe if stale, otherwise review | `cargo clean --manifest-path …`, `rm -rf …/.next` |
+| **Toolchains** | rustup toolchains, Volta Node versions, pyenv versions, uv Pythons (`~/.local/share/uv/python`) | review | `rustup toolchain uninstall …` |
+| **Containers** | `podman system df --format json` if Podman is installed | review | `podman system prune` |
+| **Downloads** | Files older than 90 days, largest first | review | — |
+| **iPhone (USB)** | Storage, apps by size with a "probably unused" flag, shared app files, and duplicate photos (see [iPhone mode](#iphone-mode)) | review | `groundskeeper clean iphone-apps <bundleID>` |
+| **Browsers** | Cache, code cache, GPU cache, service-worker cache, on-device AI models and site data per browser and profile (see below) | safe / review / keep | `groundskeeper clean browsers --dry-run` |
+| **Unused apps** | Apps in `/Applications` and `~/Applications` not opened in 120+ days, with the app's size plus its leftover data (see below) | review | `brew uninstall --cask --zap <name>` or Move to Trash |
+
+### Unused app detection
+
+**Last used.** Read `kMDItemLastUsedDate` for each `.app` with `mdls -raw -name kMDItemLastUsedDate`. macOS updates this whenever an app is opened through Finder, the Dock, Spotlight or `open`.
+
+Some apps are launched mostly from a terminal, such as VS Code via `code`, and that may not update the date. To avoid false positives, the scanner also checks the newest modified date in the app's `Application Support`, `Saved Application State` and `Containers` folders, and uses whichever date is more recent.
+
+**Confidence.** Each recommendation is labelled:
+- **High:** both signals agree the app is older than the threshold.
+- **Low:** no usage was ever recorded (for example, Spotlight indexing is off), so you should double-check.
+
+**Size.** The app bundle plus the leftovers that removing it would also free. The bundle ID is read from `Contents/Info.plist`, and these locations are checked:
+- `~/Library/Application Support/<name or bundle ID>`
+- `~/Library/Caches/<bundle ID>`
+- `~/Library/Containers/<bundle ID>` and matching `Group Containers`
+- `~/Library/Saved Application State/<bundle ID>.savedState`
+- `~/Library/Logs/<name>`
+- `~/Library/Preferences/<bundle ID>.plist`
+
+The report shows the app size and leftover size separately, because dragging an app to the Trash leaves the leftovers behind.
+
+**Suggested removal, based on how the app was installed:**
+
+| Installed via | Detected by | Suggested removal |
+|---|---|---|
+| Homebrew cask | `brew list --cask --versions` | `brew uninstall --cask --zap <name>` (also removes leftovers) |
+| App Store | `Contents/_MASReceipt` exists | Delete from Launchpad or move to the Trash; can be reinstalled free from the App Store |
+| Vendor uninstaller | An `Uninstall*.app` inside or beside the app | Run the vendor's uninstaller |
+| Anything else | — | Move to the Trash, then delete the listed leftover folders |
+
+**Never recommended:**
+- Apple's own apps (`com.apple.*` bundle IDs)
+- Apps that are currently running
+- Anything in `appExclude` in the config, for apps you use rarely but want to keep (installers, VPNs, hardware utilities)
+
+Like the rest of the report, this section only recommends. It never removes apps.
+
+### Browser detection
+
+The scanner finds every installed browser and every profile, then measures each category separately so the report can show exactly what clearing caches would save versus what would log you out.
+
+| Browser | Cache locations (Safe) | Larger items (Review) |
+|---|---|---|
+| Chrome | `~/Library/Caches/Google/Chrome/<Profile>/{Cache,Code Cache}`; in `Application Support/Google/Chrome/<Profile>/`: `GPUCache`, `Service Worker/CacheStorage` | On-device AI model (`OptGuideOnDeviceModel`, several GB; Chrome re-downloads it unless the feature is turned off); old component updates; `Crashpad` dumps |
+| Edge / Brave / Arc | Same Chromium layout under `Microsoft Edge`, `BraveSoftware/Brave-Browser`, `Arc` | Same as Chrome |
+| Firefox | `~/Library/Caches/Firefox/Profiles/*/cache2`, `startupCache` | `storage/default` site data |
+| Safari | `~/Library/Caches/com.apple.Safari`; container caches under `~/Library/Containers/com.apple.Safari` | Needs Full Disk Access to read; listed under Skipped paths otherwise |
+| DuckDuckGo | `~/Library/Caches/com.duckduckgo.macos.browser` | — |
+
+Three tiers appear in the report for each profile:
+- **Cache (Safe).** Pages and code that the browser re-downloads when needed. Clearing it costs nothing except a slightly slower first visit.
+- **Offline data (Review).** Service-worker storage and on-device models. Clearing it is mostly harmless, but installed web apps lose their offline copies and models re-download.
+- **Site data (Keep).** Cookies, Local Storage, IndexedDB, history and passwords. The report shows the size for information only and never suggests clearing it, because doing so logs you out of sites.
+
+### Build-artifact detection
+
+Walk the configured project roots (default: `~/projects`, `~/github`, `~/code`, `~/Developer`), skipping `.git`, and stop descending once an artifact folder is found.
+
+| Folder | Counts only when |
+|---|---|
+| `node_modules` | always |
+| `.venv` / `venv` | contains `pyvenv.cfg` |
+| `target/` | sibling `Cargo.toml` exists |
+| `.next` | always (pure build output) |
+| `bin/` + `obj/` | sibling `*.csproj` exists |
+| `__pycache__` | totalled per project rather than listed individually |
+
+**Staleness.** Use the date of the last git commit (`git log -1 --format=%ct`) when the project is a git repo. Otherwise use the newest mtime among the project's own files, ignoring artifact folders. Folder mtimes aren't used because a bulk sync or pull resets them all to the same date.
+
+**Broken venvs.** Flag any `.venv` whose `pyvenv.cfg` `home` points at an interpreter that no longer exists. This is useful after removing pyenv, since many venvs were built on pyenv Pythons.
+
+## iPhone mode
+
+```
+groundskeeper iphone                        # scan a connected iPhone and add it to the report
+groundskeeper setup photos                  # re-ask whether iCloud Photos is on
+groundskeeper review photos                 # terminal review of duplicate photo groups
+groundskeeper clean iphone-apps <bundleID>  # uninstall apps (dry run unless --apply)
+groundskeeper clean photos                  # delete photos you approved in review (dry run unless --apply)
+```
+
+The phone connects to the Mac over USB. Talking to it from the Mac allows things no app on the phone is permitted to do, such as listing and uninstalling other apps. Photos are the exception: their deletion always goes through Apple's own photo frameworks so the phone's photo library is never corrupted.
+
+```mermaid
+flowchart TD
+  C["groundskeeper iphone"] --> G["go-ios over USB"]
+  G --> ST["Storage totals"]
+  G --> AP["Apps with sizes"]
+  G --> FS["Shared app files"]
+  C --> PM{"Setup answer: iCloud Photos on?"}
+  PM -- "iCloud Photos on" --> ML["Mac Photos library"]
+  PM -- "iCloud Photos off" --> DC["iPhone camera roll over USB"]
+  ML --> SH["Swift helper using PhotoKit and Vision"]
+  DC --> SI["Swift helper using ImageCaptureCore and Vision"]
+  SH --> GR["Duplicate grouping in Go"]
+  SI --> GR
+  ST --> H[("iPhone snapshot history")]
+  AP --> H
+  H --> U["Probably-unused apps"]
+  U --> R["HTML report"]
+  FS --> R
+  GR --> R
+  GR --> TUI["Terminal review"]
+```
+
+### Connecting
+
+- **Library:** [go-ios](https://pkg.go.dev/github.com/danielpaulus/go-ios), a pure-Go implementation of Apple's device protocols. It covers device detection, disk space, listing installed apps, uninstalling by bundle ID, and file access to app containers.
+- **iOS 17 and later** requires a tunnel to be running before go-ios can talk to the phone, started as root (`sudo ios tunnel start`). `make install-tunnel` installs this as a LaunchDaemon so it's always available; otherwise `groundskeeper iphone` explains how to start it.
+- The phone must be **unlocked and trusted** ("Trust This Computer"). If it isn't, the tool says so and exits cleanly.
+- **Fallback:** libimobiledevice CLIs (`ideviceinfo`, `ideviceinstaller`), if go-ios can't do something on a given iOS version.
+
+### Storage and apps
+
+- **Device storage:** total and available space.
+- **Per-app size:** the app itself (static) and its documents and data (dynamic). Offline downloads and caches hide in the data size.
+- **Probably unused:** iOS doesn't expose "Last Used" over USB, so each scan saves every app's data size, and an app whose data size hasn't changed in 120 days or more is flagged as probably unused. Apps you open regularly almost always write something, so their size changes. The report labels this as an estimate, suggests confirming the Last Used date in Settings › General › iPhone Storage, and only shows the flag once there are 120 days of history.
+- **Never flagged:** Apple's apps and anything in `iphoneKeep`.
+
+**Uninstalling (opt-in):**
+- `groundskeeper clean iphone-apps <bundleID>...` takes explicit bundle IDs. There's no "remove everything flagged" option.
+- It's a dry run unless `--apply` is given. With `--apply`, it asks for confirmation for each app, showing the app's name and the data that will be lost.
+- Uninstalling deletes the app's data permanently, unlike the Trash. The confirmation says so, and recommends **offloading in iPhone Storage** instead for apps whose data you want to keep, since offloading isn't available over USB (to be confirmed in the spike).
+
+### Shared app files
+
+- Apps that share files with the Mac (the ones that show up in Finder's Files tab for the phone) expose a Documents container.
+- The report lists the largest of these containers and their biggest files. This section is read-only; deleting files is left to Finder or the app itself.
+- Data inside other apps' private storage, such as streaming downloads, caches and Messages attachments, isn't reachable over USB. The report links to the iPhone Storage steps for those.
+
+### Duplicate photos
+
+**Setup question.** The first time `groundskeeper iphone` runs, it asks one question and saves the answer as `photosSource` in the config:
+
+```
+Is iCloud Photos turned on for this iPhone?
+  > Yes — clean duplicates in this Mac's Photos library (changes sync to the phone)
+    No  — clean duplicates on the phone directly over USB
+    Not sure — show me how to check
+```
+
+```mermaid
+flowchart TD
+  S["groundskeeper iphone (first run)"] --> Q{"iCloud Photos on?"}
+  Q -- "Yes" --> M["photosSource = mac-library"]
+  Q -- "No" --> D["photosSource = device"]
+  Q -- "Not sure" --> H["Show where to check on the phone"]
+  H --> Q
+  M --> C["Sanity check each photo scan"]
+  D --> C
+  C --> OK{"Answer still looks right?"}
+  OK -- "yes" --> P["Continue scan"]
+  OK -- "no" --> W["Warn and offer to ask again"]
+  W --> Q
+```
+
+- **Not sure:** shows where to look on the phone (Settings › your name › iCloud › Photos, the "Sync this iPhone" switch), then asks again.
+- **Sanity check:** each photo scan compares the newest photos on the phone with the Mac library. If the answer was Yes but recent phone photos are missing from the Mac library (for example, because the Mac isn't signed in to the same Apple Account or Photos hasn't synced), the tool warns before scanning and offers to ask the question again.
+- **Changing the answer later:** `groundskeeper setup photos` asks again, or edit `photosSource` in the config.
+- The prompt uses the same terminal UI library as the photo review. In non-interactive runs, such as the schedule, photo scanning is skipped anyway, so the question is never asked there.
+
+**iCloud Photos on (`"mac-library"`):** the phone's library is the same one synced to the Mac's Photos app, so duplicates are found and deleted there, and the deletions sync to the phone. Nothing on the phone is touched directly. This also works with "Optimize iPhone Storage", where the phone doesn't hold all the originals.
+
+**iCloud Photos off (`"device"`):** the photos are read from the phone's camera roll over USB, and deleted through Apple's ImageCaptureCore framework, which is the same mechanism Image Capture uses for "Delete after import". Files are never deleted directly from the phone's camera folder, because that bypasses the phone's photo database and can corrupt it.
+
+**Swift helper (`photos-helper`).** Decoding HEIC, Vision analysis, PhotoKit and ImageCaptureCore are only available to Swift or Objective-C, so a small command-line Swift helper does those steps. The Go tool runs it and exchanges JSON over stdout. Its commands:
+- `list`: asset IDs, dates, dimensions, favorite and album status, and file sizes
+- `analyze`: Vision feature prints and quality scores for the given assets
+- `thumbnail`: writes small JPEG thumbnails for review
+- `delete`: deletes the given asset IDs through PhotoKit or ImageCaptureCore
+
+**Detection,** in Go, using the helper's output:
+1. **Exact duplicates:** grouped by size and dimensions, then confirmed with SHA-256.
+2. **Near-duplicates:** photos taken within 10 minutes of each other, or in the same burst, are compared by feature-print distance and linked into groups.
+3. **Best shot to keep:** aesthetic score, sharpness and face quality. Favorites, edited photos and photos in albums are always kept.
+4. **Other categories:** screenshots older than 30 days and the largest videos.
+
+**Review and delete:**
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant T as groundskeeper review photos
+  participant G as Go core
+  participant S as photos-helper
+  participant P as Photos (Mac or iPhone)
+  U->>T: Start review
+  T->>G: Load duplicate groups
+  G->>S: thumbnail for group members
+  S-->>T: Thumbnail files
+  T->>U: Show group, best shot marked Keep
+  U->>T: Accept, change keeper, or skip
+  T->>G: Save approved selection
+  U->>G: groundskeeper clean photos --apply
+  G->>U: Summary with count and size, confirm
+  U->>G: Confirm
+  G->>S: delete approved asset IDs
+  S->>P: Delete through PhotoKit or ImageCaptureCore
+  P-->>U: System confirmation (Mac library path)
+  P-->>S: Done
+  S-->>G: Result
+  G-->>U: Moved to Recently Deleted for 30 days
+```
+
+- The review runs in the terminal with Bubble Tea. Thumbnails are shown inline in iTerm2 or Kitty using their image protocols; in other terminals, pressing space opens the group in Quick Look (`qlmanage -p`).
+- Deleting from the Mac Photos library sends photos to **Recently Deleted** for 30 days on every device. The device path is confirmed in the spike; if ImageCaptureCore deletions are permanent there, the confirmation says so.
+
+### When it runs
+
+- The **scheduled report** includes the iPhone storage and apps section only if the phone happens to be connected and unlocked; otherwise it shows the last saved iPhone data with its date.
+- **Photo scanning never runs on the schedule.** It's heavy, and macOS grants Photos access to the terminal app you run it from, which a background job doesn't have. Run `groundskeeper iphone` from the terminal when you want it.
+
+### Spike before building (about a day)
+
+Confirm on the current iOS version:
+1. Which per-app size fields go-ios returns, and whether they match iPhone Storage.
+2. Whether uninstalling works and what, if anything, the phone shows.
+3. Whether offloading (rather than uninstalling) is possible over USB.
+4. That the Swift helper can list, analyze and delete through PhotoKit on the Mac, and what confirmation macOS shows.
+5. Whether ImageCaptureCore can delete from an iPhone, and whether deleted photos go to Recently Deleted.
+6. Whether the iOS 17 tunnel can run reliably as a LaunchDaemon.
+
+Any feature that fails the spike is dropped or downgraded to a report-only recommendation.
+
+**Config additions**
+- `photosSource`: `"mac-library"` or `"device"`, set by the first-run question.
+- `iphoneKeep`: bundle IDs that are never flagged.
+- `iphoneUnusedDays`: default 120.
+- `photoWindowMinutes`: default 10.
+- `screenshotDays`: default 30.
+
+## Browser cleanup (opt-in)
+
+```
+groundskeeper clean browsers [--browser chrome,firefox] [--include-offline] [--apply]
+```
+
+Safety rules:
+- **Dry run by default.** Without `--apply`, it lists what would be removed and the total savings.
+- **Allowlist only.** It touches only the cache folders in the Safe tier, plus the Review tier when `--include-offline` is given. Site data, cookies, history and passwords are never touched, and there's no flag to include them.
+- **Refuses if the browser is running.** It checks with `pgrep` and asks you to quit that browser first, because deleting a cache while the browser has it open can corrupt it.
+- **Moves to the Trash instead of deleting**, so a mistake can be undone until you empty the Trash.
+- **Never scheduled.** launchd only ever runs the read-only report. Cleanup happens only when you run the command.
+- Every action is written to `~/Library/Logs/groundskeeper.log`.
+
+The HTML report shows the exact command next to each browser's savings, for example `groundskeeper clean browsers --browser chrome --apply`.
+
+## Command-line interface
+
+The CLI should be pleasant to use and explain itself. Every command has a one-line summary, a longer description, worked examples, and a note about what it will and won't touch.
+
+### Libraries
+
+| Library | Used for | Docs |
+|---|---|---|
+| [Cobra](https://github.com/spf13/cobra) | Subcommands, flags, help topics, shell completions | [cobra.dev](https://cobra.dev/) |
+| [Fang](https://github.com/charmbracelet/fang) | Wraps Cobra: styled help and usage, styled errors, `--version`, man page and completion commands | [README](https://github.com/charmbracelet/fang#readme) |
+| [Lip Gloss](https://github.com/charmbracelet/lipgloss) | Colors, tables and boxes in normal command output | [pkg.go.dev](https://pkg.go.dev/github.com/charmbracelet/lipgloss) |
+| [Bubble Tea](https://github.com/charmbracelet/bubbletea) / [Bubbles](https://github.com/charmbracelet/bubbles) | Already used for review screens; also the scan spinner and progress bar | [pkg.go.dev](https://pkg.go.dev/github.com/charmbracelet/bubbletea) |
+
+Pin the latest stable versions at build time and check each library's release notes, since the Charm libraries have been moving to v2 APIs.
+
+### Command tree
+
+Commands are grouped in the help output so the safe, read-only commands come first:
+
+```
+groundskeeper — keep your Mac's disk free of clutter
+
+Report (read-only)
+  scan        Scan the Mac and write the HTML report (default command)
+  iphone      Scan a connected iPhone and add it to the report
+  history     Show free-space trend and the fastest-growing items
+  stats       Show scan timings, skipped paths and cleanup totals
+  logs        Show recent log entries, with filters
+
+Review
+  review photos   Step through duplicate photo groups
+
+Clean (dry run unless --apply)
+  clean browsers      Move browser caches to the Trash
+  clean iphone-apps   Uninstall iPhone apps by bundle ID
+  clean photos        Delete photos you approved in review
+
+Setup
+  setup photos   Re-ask whether iCloud Photos is on
+  config         Show the config file path and current values
+  doctor         Check permissions, tunnel and schedule
+
+Help topics
+  safety     What groundskeeper never deletes, and how dry runs work
+  schedule   How the launchd job works and how to change it
+  privacy    Full Disk Access, Photos access, FileVault and backups
+```
+
+- Running `groundskeeper` with no subcommand runs `scan`, so launchd and `gk` stay short.
+- Groups use Cobra's [command groups](https://pkg.go.dev/github.com/spf13/cobra#Group). Help topics are commands with no `Run`, which Cobra lists under "Additional help topics" ([docs](https://cobra.dev/docs/how-to-guides/working-with-commands/)).
+- `doctor` checks, and explains how to fix: Full Disk Access, whether the LaunchAgent is loaded and its next run, the iOS 17 tunnel, Photos access, whether `photos-helper` is installed, whether FileVault is on, and whether `outputDir` is in a synced folder.
+
+### Help content
+
+Each command's help has the same parts, in this order:
+1. **Summary:** one line.
+2. **What it does:** two or three sentences.
+3. **Safety:** for `clean` commands, a short block stating it's a dry run without `--apply`, what it never touches, and where removed items go (Trash, Recently Deleted, or permanent).
+4. **Examples:** two to four real commands with a comment on each, for example:
+   ```
+   # See what clearing Chrome and Firefox caches would save
+   gk clean browsers --browser chrome,firefox
+
+   # Actually move them to the Trash
+   gk clean browsers --browser chrome,firefox --apply
+   ```
+5. **Flags:** with defaults shown.
+6. **See also:** related commands and help topics.
+
+Help text lives next to each command so it stays in sync with the code.
+
+### Output styling
+
+- **Sizes** are human-readable (`12.4 GB`) and right-aligned in tables.
+- **Safety tags** use consistent colors everywhere: safe in green, review in yellow, keep in gray. The same words appear in the HTML report.
+- **Changes** since the last run show as `+2.1 GB` or `-800 MB`, in red when the item grew.
+- **Scans** show a spinner with the current scanner name, then a summary box: free space, reclaimable estimate, change since last run, and the report path.
+- **Dry runs** end with a clear line such as `Dry run: nothing was changed. Add --apply to move 4.2 GB to the Trash.`
+- **Errors** say what went wrong and what to try next, for example `iPhone is locked. Unlock it and run gk iphone again.`
+- **Plain output when it should be:** when stdout isn't a terminal (launchd, pipes) or `NO_COLOR` is set, there are no colors, spinners or boxes. Lip Gloss detects the terminal's color support on its own; the scan only shows a spinner when stdout is a TTY. See [no-color.org](https://no-color.org/).
+
+### Shell completion
+
+- `make install` installs zsh completion (`groundskeeper completion zsh`, generated by Cobra).
+- `clean iphone-apps` completes bundle IDs from the last iPhone snapshot, using Cobra's [dynamic completions](https://cobra.dev/docs/how-to-guides/shell-completion/) (`ValidArgsFunction`).
+- `--browser` completes the browsers found on this Mac.
+
+## Security and privacy
+
+With Full Disk Access, Groundskeeper can see browser profiles, app containers, Messages and the photo library. The rules below keep it from leaking that data or being turned against the user.
+
+**What it reads**
+- Scanners only `stat` files and add up their sizes. They never open, parse or copy cookies, passwords, history, Local Storage, IndexedDB, keychains or Messages databases.
+- The only files whose contents are read are Ollama manifests, `pyvenv.cfg`, `Contents/Info.plist`, and the tool's own config and snapshots.
+
+**What it sends**
+- No network requests: no telemetry, no update checks, no remote reports. The only connection off the Mac is go-ios over USB to the phone.
+- Reports, snapshots, logs, notifications and `photos-helper` JSON contain only paths, sizes, dates, bundle IDs and asset IDs. They never contain file contents, environment variables or raw command output.
+
+**What it writes**
+- The report directory, `~/.local/state/groundskeeper` and the log file are created with mode `0700` for directories and `0600` for files, because the paths in them reveal project, app and account names.
+- The HTML report is rendered with [`html/template`](https://pkg.go.dev/html/template), which escapes file names that contain markup. The report loads no external scripts, fonts or images.
+- Suggested cleanup commands quote paths for the shell, so a crafted folder name can't inject a command when the user copies the hint.
+
+**What it runs**
+- External tools (`git`, `mdls`, `brew`, `pgrep`, `podman`, `osascript`, `photos-helper`, `qlmanage`) are started with [`exec.CommandContext`](https://pkg.go.dev/os/exec) and separate arguments, never through `sh -c`.
+- Notification text is passed to `osascript` as an argument (`on run argv`), not inserted into the AppleScript source.
+- `photos-helper` is called by absolute path from the install location, not looked up through `$PATH`.
+
+**What it deletes**
+- `clean browsers` resolves each path with `filepath.EvalSymlinks` and checks that the real path is still inside an allowlisted cache folder before moving it to the Trash. Anything else is refused and logged.
+- `clean iphone-apps` accepts only bundle IDs found in the last iPhone snapshot, and refuses Apple apps and anything in `iphoneKeep`.
+- `clean photos` deletes only asset IDs saved by `review photos`. It never accepts IDs from the command line.
+- History pruning deletes only files in the state directory whose names match the snapshot pattern.
+
+**Data at rest**
+- Reports, snapshots and logs are not encrypted by the tool. They hold no file contents or secrets, file permissions keep other users out, and FileVault protects them if the Mac is lost. Encrypting them would break opening the report in a browser and reading the log with standard tools, and wouldn't stop malware running as the user, which can read the scanned folders directly.
+- `doctor` runs `fdesetup status` and warns if FileVault is off, with the steps to turn it on.
+- `scan` and `doctor` warn if `outputDir`, after resolving symlinks, is inside a folder that syncs off the Mac: `~/Library/Mobile Documents` (iCloud Drive), `~/Library/CloudStorage` (Dropbox, Google Drive, OneDrive and other cloud storage providers), `~/Desktop` or `~/Documents` (synced when iCloud Desktop and Documents is on). The default `~/Reports/groundskeeper` doesn't sync.
+- The `privacy` help topic explains that Time Machine copies these files, and recommends turning on backup encryption.
+
+**Test fixtures**
+- Recorded go-ios responses are scrubbed before they're committed. A small recorder (`internal/iphone/record`, run with `go run`) captures responses from a real phone, and before writing them to `testdata/` it replaces:
+  - device identifiers (UDID, serial number, ECID, IMEI, MEID), phone number, device name, Apple Account email, and Wi-Fi and Bluetooth MAC addresses, with fixed fake values
+  - bundle IDs of non-Apple apps with `com.example.app1`, `com.example.app2` and so on, keeping the sizes. App names are replaced the same way.
+  - file names in shared app containers with `file1.ext`, `file2.ext` and so on, keeping the extensions and sizes
+- `photos-helper` fixtures are written by hand with made-up asset IDs, dates and sizes. They never come from a real library, and they contain no location data.
+- Raw, unscrubbed recordings are written only to a temporary directory outside the repo, never to `testdata/`.
+
+**Privileges and dependencies**
+- Only the iOS 17 tunnel runs as root, as its own LaunchDaemon. The `groundskeeper` binary never calls `sudo`.
+- Dependencies are limited to those named in this plan. `govulncheck ./...` ([docs](https://go.dev/doc/tutorial/govulncheck)) runs in `make test`.
+
+## Logging and metrics
+
+Everything stays on the Mac. Logs and metrics are written to local files and shown in the HTML report and the CLI. They are never sent anywhere (see [Security and privacy](#security-and-privacy)).
+
+### Logging
+
+- Uses the standard library's [`log/slog`](https://pkg.go.dev/log/slog) with `slog.NewJSONHandler`, one JSON object per line, written to `~/Library/Logs/groundskeeper.log`.
+- **Levels:** `info` by default, set with `logLevel` in the config. The global `--verbose` flag also prints `debug` entries to stderr in plain text.
+- **Every entry has** `time`, `level`, `msg`, `run_id` (one per invocation) and `cmd`. Scanner entries add `scanner`, `duration_ms`, `items` and `bytes`.
+- **What gets logged:** start and end of each run, each scanner's result, skipped paths and why (permission, timeout), timeouts, iPhone connection state, and every `clean` action with path or ID, size and outcome (moved to Trash, refused, failed). Dry runs are logged too, marked `dry_run: true`.
+- **Never logged:** file contents, environment variables, config values other than paths, or raw output from external commands. Log fields go through one helper that only accepts paths, sizes, counts, durations, IDs and error kinds, so nothing else can slip in by accident.
+- **Rotation:** the tool rotates its own log at 5 MB and keeps three old files (`groundskeeper.log.1` to `.3`). The launchd job's stdout and stderr go to a separate `groundskeeper.launchd.log`, so the two writers don't fight over one file.
+
+### Metrics
+
+Each run records metrics in its snapshot, so they share the snapshot's pruning and trend logic:
+
+| Metric | Detail |
+|---|---|
+| Run | Start time, total duration, command, exit status, interactive or scheduled |
+| Per scanner | Duration, items found, bytes measured, paths skipped, timeouts, errors |
+| Size engine | Files and folders visited, hardlinks deduped |
+| Disk | Free and total space (already in the snapshot) |
+| Cleanup | For each `clean` run: items and bytes moved to the Trash or deleted, items refused, dry run or applied |
+| iPhone | Whether it was connected, scan duration, apps and photos counted |
+
+Cleanup runs write a small snapshot of their own (`clean-YYYY-MM-DDTHHMM.json`) with just the cleanup metrics.
+
+### Where they show up
+
+- **HTML report:** a "Run details" section at the bottom with scanner timings as a bar chart, skipped paths and the reason for each, and space freed by `clean` commands since the last report. A slow or failing scanner is highlighted.
+- **`groundskeeper stats`:** the same numbers in the terminal, as a Lip Gloss table, for the last run or with `--runs N` for trends (for example, a scanner that keeps getting slower). `--json` prints the raw metrics.
+- **`groundskeeper logs`:** shows recent log entries, formatted and colored. Filter with `--level warn`, `--run last`, `--cmd clean`, or follow live with `--follow`. `--json` prints raw lines.
+- **`groundskeeper doctor`:** reports the last scheduled run's time and status, so a schedule that stopped running gets noticed.
+- **Notification:** if a scheduled run had errors or skipped paths it didn't skip last time, the notification says so, for example "118 GB free · 2 scanners had problems · see report".
+
+## Size engine
+
+- A worker pool (default 6 workers), with a per-folder `context` timeout so one huge folder can't stall the run.
+- Size counts allocated disk blocks (`Stat_t.Blocks * 512`), not apparent file size, so sparse VM disk images are measured correctly.
+- Symlinks are skipped, and hardlinks are counted once by tracking device and inode (this matters for pnpm stores).
+- Unreadable paths are recorded as "skipped" and shown in the report, never treated as errors.
+
+## History and deltas
+
+- Each run writes a snapshot to `~/.local/state/groundskeeper/YYYY-MM-DDTHHMM.json` containing the time, free space, total space, size per item, and the run's metrics (see [Logging and metrics](#logging-and-metrics)).
+- Each run loads the most recent previous snapshot and computes:
+  - the change in free space
+  - the change per item
+  - the five items that grew fastest
+- Snapshots older than six months are pruned. The tool only ever deletes its own state files.
+
+## Output
+
+- **HTML report:** `~/Reports/groundskeeper/YYYY-MM-DD.html`, plus a `latest.html` copy.
+  - The header shows free space, used percentage, an estimate of reclaimable space (sum of Safe items), and the change since the last run.
+  - Sections: Caches, AI models, Build artifacts, Toolchains, Containers, Downloads, Browsers, Unused apps, iPhone, Skipped paths, Run details.
+  - Each row shows its path, size, change, safety tag and suggested command.
+  - Supports light and dark mode and fits mobile widths.
+- **Notification:** posted through `osascript display notification`, for example "118 GB free · ~35 GB reclaimable · report ready".
+- **Flags** (on `scan`; `--config` is global):
+  - `--open`: opens the report after it's generated
+  - `--config <path>`: uses a different config file
+  - `--dry`: prints a summary to stdout without writing files
+
+## Configuration
+
+`~/.config/groundskeeper/config.json`:
+
+```json
+{
+  "projectRoots": ["~/projects", "~/github", "~/code", "~/Developer"],
+  "staleDays": 90,
+  "minSizeMB": 100,
+  "outputDir": "~/Reports/groundskeeper",
+  "extraPaths": [],
+  "excludePaths": [],
+  "appUnusedDays": 120,
+  "appExclude": ["com.example.vpn-client"],
+  "iphoneUnusedDays": 120,
+  "iphoneKeep": [],
+  "photosSource": "mac-library",
+  "photoWindowMinutes": 10,
+  "screenshotDays": 30,
+  "logLevel": "info"
+}
+```
+
+If the file doesn't exist, the tool uses built-in defaults.
+
+## Scheduling
+
+A LaunchAgent at `~/Library/LaunchAgents/com.lot86.groundskeeper.plist`:
+
+- `StartCalendarInterval` holds two entries: Monday (`Weekday 1`) and Thursday (`Weekday 4`) at 09:00. The days and time are adjustable.
+- If the Mac is asleep at the scheduled time, launchd runs the job when it wakes. cron doesn't do this, which is why launchd is used.
+- The tool writes its own log to `~/Library/Logs/groundskeeper.log`. The plist's `StandardOutPath` and `StandardErrorPath` point to `~/Library/Logs/groundskeeper.launchd.log`.
+- `ProgramArguments` is `~/bin/groundskeeper`.
+
+**macOS privacy.** Downloads, Documents and Desktop are privacy-protected, so a background job can't read them by default. Either grant Full Disk Access to `~/bin/groundskeeper` in System Settings → Privacy & Security, or the tool skips those folders and lists them under Skipped paths.
+
+**Photos access.** The first time `photos-helper` reads the Mac Photos library, macOS asks to grant Photos access to the terminal app you ran it from (iTerm2 or Terminal). That's one reason photo scanning is on-demand only.
+
+## Project layout
+
+```
+groundskeeper/
+  cmd/groundskeeper/main.go          # builds the root command, runs it through Fang
+  internal/cli/                      # one file per command: help text, flags, examples
+    root.go
+    scan.go
+    iphone.go
+    clean.go
+    review.go
+    setup.go
+    doctor.go
+    stats.go
+    logs.go
+    topics.go                      # safety, schedule, privacy help topics
+  internal/logging/                # slog setup, safe field helper, rotation, log reader for `logs`
+  internal/metrics/                # run and scanner metrics, stored in snapshots
+  internal/ui/                     # Lip Gloss styles, size/delta formatting, tables, spinner
+  internal/config/config.go
+  internal/size/du.go              # block-based sizing, timeouts, hardlink dedupe
+  internal/scan/
+    caches.go
+    models.go                      # ollama + huggingface + lmstudio
+    artifacts.go                   # build-artifact walker + staleness
+    toolchains.go
+    containers.go
+    downloads.go
+    browsers.go                    # browser + profile discovery, tiered sizing
+    apps.go                        # last-used dates, leftovers, install-source detection
+  internal/iphone/
+    device.go                      # go-ios connection, tunnel check, trust/unlock errors
+    apps.go                        # app sizes, unused-app proxy
+    files.go                       # shared app containers
+    photos.go                      # runs photos-helper, grouping, best-shot scoring
+  internal/clean/
+    browsers.go                    # opt-in cleaner: allowlist, running check, move to Trash
+    iphoneapps.go                  # explicit bundle IDs, per-app confirmation
+    photos.go                      # deletes only approved selections via photos-helper
+  internal/tui/review.go           # Bubble Tea photo review, inline thumbnails
+  helpers/photos-helper/           # Swift package: PhotoKit, ImageCaptureCore, Vision
+    Package.swift
+    Sources/photos-helper/main.swift
+  internal/history/history.go      # snapshots, deltas, pruning
+  internal/report/
+    report.go
+    template.html                  # embedded via go:embed
+  launchd/com.lot86.groundskeeper.plist
+  Makefile                         # build, install, uninstall, run, test
+  README.md
+```
+
+## Makefile targets
+
+| Target | Does |
+|---|---|
+| `build` | `go build -o bin/groundskeeper ./cmd/groundskeeper`, plus `swift build -c release` for `photos-helper` |
+| `install` | Copies the binary to `~/bin`, adds a `gk` symlink, installs zsh completion, fills `$HOME` into the plist, copies the plist to `~/Library/LaunchAgents`, and runs `launchctl bootstrap gui/$(id -u)` |
+| `install-tunnel` | Installs the go-ios tunnel as a LaunchDaemon (needs `sudo`), for iOS 17 and later |
+| `uninstall` | Runs `launchctl bootout`, then removes the plist, binaries and tunnel daemon |
+| `run` | Runs once now with `-open` |
+| `test` | `go test ./...`, then `govulncheck ./...` |
+
+## Build order
+
+1. **CLI skeleton, logging, size engine, Caches scanner and HTML report.** The root command, `scan`, Fang help, the `ui` styles and `slog` logging come first, so every later command follows the same help, output and logging pattern. This gives a minimal report that works end to end.
+2. **Build-artifact scanner** with git-based staleness and broken-venv detection.
+3. **Models and toolchains scanners**, including Ollama manifest parsing and Hugging Face repos.
+4. **Containers, Downloads, Browsers and Unused apps scanners.**
+5. **Opt-in `clean browsers` command**, with tests confirming it can never touch paths outside the allowlist (including through symlinks and `..`) and refuses while the browser is running.
+6. **History and deltas**, plus the "growing fastest" section. Metrics are added to snapshots here, along with the report's Run details section and the `stats` and `logs` commands.
+7. **launchd setup and notification**, with the Makefile `install` and `uninstall` targets, plus `doctor`, the help topics and zsh completion. At this point the Mac side is complete.
+8. **iPhone spike** (about a day), covering the six questions in [iPhone mode](#iphone-mode). The fixture recorder, its scrubber and the fixture guard test are built here, before any recording is saved to `testdata/`.
+9. **iPhone storage, apps and shared files** in the report, then `clean iphone-apps`.
+10. **`photos-helper`** in Swift, with its `list`, `analyze`, `thumbnail` and `delete` commands.
+11. **Photo grouping and best-shot scoring** in Go, then the terminal review and `clean photos`.
+12. **Tests** against a fake home directory made with `t.TempDir()`, covering artifact detection rules, staleness, unused-app dating and install-source detection, hardlink dedupe, Ollama manifest parsing and delta math. iPhone tests use recorded go-ios responses and canned `photos-helper` JSON, so they run without a phone. CLI tests check that every command has a summary, description and at least one example, and that output has no color codes when stdout isn't a terminal.
+13. **Security tests,** also against a fake home directory. The ones that cover a feature are written alongside it in the steps above:
+    - **Symlink escape:** a symlink inside a browser cache that points outside the allowlist (for example to `~/Documents`) is refused by `clean browsers`, and its target is left in place.
+    - **Path traversal:** cache paths containing `..` that resolve outside the allowlist are refused.
+    - **No content reads:** a fake browser profile has `Cookies`, `Login Data` and `History` files containing a marker string. After a full scan, the marker doesn't appear in the report, the snapshot, the log or stdout.
+    - **No secrets in output:** with a marker set in an environment variable such as `GITHUB_TOKEN`, a scan's outputs don't contain it.
+    - **HTML escaping:** a folder named `<script>alert(1)</script>` shows up escaped in the report.
+    - **Hint quoting:** a folder named `x; rm -rf ~` produces a hint where the name is one quoted argument.
+    - **File permissions:** the report, snapshot and log are `0600`, and their directories are `0700`.
+    - **No network:** a scan run with a dialer that fails on any connection completes without trying to connect. In CI, this runs in a sandbox with networking turned off.
+    - **Argument handling:** the notifier passes a message containing `"` and `& do shell script` to `osascript` as a single argument.
+    - **iPhone and photo IDs:** `clean iphone-apps` refuses bundle IDs missing from the snapshot, Apple apps and `iphoneKeep` entries. `clean photos` deletes only IDs from the saved review selection.
+    - **Pruning:** files in the state directory that don't match the snapshot name pattern survive pruning.
+    - **FileVault check:** with a stubbed `fdesetup` that reports FileVault as off, `doctor` warns and shows how to turn it on. When it reports on, there's no warning.
+    - **Synced output folder:** `scan` and `doctor` warn for an `outputDir` under `~/Library/Mobile Documents`, `~/Library/CloudStorage`, `~/Desktop` or `~/Documents`, including through a symlink that resolves there. They don't warn for the default `~/Reports/groundskeeper`.
+    - **Fixture scrubber:** given a sample response that contains a UDID in both the 40-character and the newer `00008xxx-…` format, plus a serial number, ECID, IMEI, phone number, email, MAC address, device name, third-party bundle IDs and file names, the recorder's output contains none of the originals. Sizes are unchanged and Apple bundle IDs are kept.
+    - **Fixture guard:** a test walks every `testdata/` directory and fails if any file contains a UDID, MAC address or email address, or a bundle ID outside `com.apple.*` and `com.example.*`. This catches unscrubbed recordings even if the recorder is bypassed. Those values have a distinctive shape, so they're matched anywhere in the file. Phone numbers and IMEIs are plain digit strings that look like file sizes (`1234567890` bytes is about 1.2 GB), so they're only checked in fields whose key names them, such as `PhoneNumber`, `IMEI` or `MEID`. Their values must be the fixed fakes. A test case confirms that a large size value doesn't trip the guard.
+    - **Safe log fields:** the logging helper rejects anything that isn't a path, size, count, duration, ID or error kind, and the "no content reads" and "no secrets" markers never appear in the log, even with `--verbose`.
+14. **Logging and metrics tests:** each scanner's duration, item count and skipped paths land in the snapshot. Rotation keeps three files at the size limit. `logs` filters by level, run and command correctly. `stats --json` matches the snapshot. A scanner that times out shows up in Run details and in the notification text.
+
+## Open decisions
+
+- Schedule: Monday and Thursday at 9:00 AM, or different days or time?
+- Whether to send a notification on every run, or only when free space drops below a threshold such as 75 GB.
+- Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).
+- Whether to keep the libimobiledevice fallback, or rely on go-ios alone if the spike goes well.
