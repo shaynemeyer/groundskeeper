@@ -7,24 +7,35 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 ### Built
 
 - **Increment 1:** the Swift package `helpers/photos-helper` (Swift 6 language mode, macOS 26+) with `list --source device`. It opens the first iPhone on USB with ImageCaptureCore and writes `{"source","assets":[{id, created, width, height, bytes, sidecarBytes, burst}]}` to stdout. Errors are `{"error": "no-device" | "locked" | "timeout"}` with exit 1; bad arguments print usage and exit 2. `make build` also builds it into `bin/photos-helper`.
+- **Increment 2:** `analyze --source device` reads a JSON array of asset IDs on stdin, fetches a 512-pixel thumbnail of each from the phone, and runs Vision's `GenerateImageFeaturePrintRequest` and `CalculateImageAestheticsScoresRequest` (the Swift API, macOS 15+). It writes `{"source","analyses":[{id, featurePrint, aesthetics, utility}],"failed":[{id, reason}]}`, where reason is `not-found`, `thumbnail` or `vision`.
 
 ### Decisions
 
 - **The asset ID is the folder and file name on the phone.** A probe over 1,162 files on two sessions found `originatingAssetID` and `fingerprint` empty for every file and `ptpObjectHandle` the same for every file. Folder and file name was unique for every file and identical across both sessions (same SHA-256 of the sorted list). `delete` should still check size and date before deleting, as the step 8 spike did.
 - **No phone is detected with a 10 s timeout**, not `deviceBrowserDidEnumerateLocalDevices`: that callback fired with zero devices before the phone was added, on every run.
 - **Open errors aren't final.** With the phone unlocked, each run still got "access restricted", an open error -9943, then "access restriction removed", and the catalog arrived without retrying. So `list` waits up to 120 s for the catalog and reports `locked` only if the phone is still restricted then.
+- **Feature-print distance is squared Euclidean.** Plain Euclidean distance over the raw floats differed from Vision's `distance(to:)` by up to 0.25 on 19 pairs of real photos; its square differed by at most 6.6e-8. So `featurePrint` is the raw 768 float32 values, and step 11's Go grouping computes the same distance.
+- **512-pixel thumbnails.** On 20 photos, 512 and 1024 pixels both took about 130 ms per photo to fetch (most of it USB round trips) and Vision under 20 ms, with near-identical scores (aesthetics 0.27 against 0.24 on one photo).
 - No GPS (`gpsString`), file contents or device name in the output. `sidecarBytes` counts Live Photo videos and edit files (192 sidecars on the test phone), so space estimates aren't short.
 
 ### Verified
 
 - On the phone (iOS 27.0.1): 1,162 assets, all with unique IDs, a date and dimensions; no GPS or location keys in the output. Folders are named `YYYYMM__`, not `100APPLE`.
 - Bad arguments exit 2 with usage.
+- `analyze` on all 1,162 assets plus one made-up ID: 140 s, 1,162 analyses, every print 3,072 bytes, the made-up ID reported as `not-found`.
+
+### Problems found
+
+- **The catalog timeout would have cut off `analyze`.** In increment 1, the 120 s timer kept running after the catalog arrived, and its handler fails with `locked` or `timeout`; a full `analyze` takes 140 s. Found while reading the code for increment 2. Fixed by stopping the timers once the catalog is delivered; the full 140 s run now finishes.
 
 ### Open
 
 - The `no-device` and `locked` paths still need a run with the phone unplugged, and with it locked.
 - Favorites, albums and edits aren't visible over USB. Edits may be detectable from `.AAE` sidecars.
 - Whether file names stay the same after other photos are deleted.
+- `utility` isn't a screenshot detector: it flagged 26 of 53 PNGs (iPhone screenshots are PNG) and 249 of 1,077 HEIC photos. Step 11 needs another way to find screenshots.
+- Videos are analyzed from their poster frame.
+- Sharpness and face quality for best-shot scoring aren't computed yet.
 
 ## Step 9: iPhone storage, apps and shared files
 

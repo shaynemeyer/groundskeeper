@@ -7,12 +7,14 @@ import ImageCaptureCore
 final class DeviceCatalog: NSObject {
     /// How long to wait for a phone to show up.
     static let findTimeout: TimeInterval = 10
-    /// How long to wait for the catalog, which includes time to unlock.
+    /// How long to wait for the catalog, which includes time to unlock. The
+    /// timeouts stop once the catalog is delivered, so long commands finish.
     static let catalogTimeout: TimeInterval = 120
 
     private let browser = ICDeviceBrowser()
     private let done: (Result<[ICCameraFile], ErrorKind>) -> Void
     private var camera: ICCameraDevice?
+    private var delivered = false
 
     init(done: @escaping (Result<[ICCameraFile], ErrorKind>) -> Void) {
         self.done = done
@@ -30,7 +32,9 @@ final class DeviceCatalog: NSObject {
     }
 
     private func after(_ seconds: TimeInterval, _ body: @escaping @MainActor (DeviceCatalog) -> Void) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { body(self) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+            if !self.delivered { body(self) }
+        }
     }
 }
 
@@ -49,6 +53,8 @@ extension DeviceCatalog: @preconcurrency ICDeviceBrowserDelegate {
 /// it is unlocked, so open errors are not treated as final.
 extension DeviceCatalog: @preconcurrency ICCameraDeviceDelegate {
     func deviceDidBecomeReady(withCompleteContentCatalog device: ICCameraDevice) {
+        guard !delivered else { return }
+        delivered = true
         done(.success((device.mediaFiles ?? []).compactMap { $0 as? ICCameraFile }))
     }
 
