@@ -24,7 +24,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 ### Open
 
 - Decoding hasn't been run against the real helper's output yet; that comes when `gk iphone` runs it.
-- `hash --source mac-library` ran from a terminal app with Photos access and hashed the 3 oldest library photos with no failures (from the agent's terminal it answers `denied`). The hashes haven't yet been compared with an exported unmodified original.
+- `hash --source mac-library` ran from a terminal app with Photos access and hashed the 3 oldest library photos (two JPEGs and an edited PNG screenshot) with no failures; from the agent's terminal it answers `denied`. Each hash equalled `shasum -a 256` of the photo's file in the library's `originals` folder (named by the ID's UUID), and each file's size equalled `list`'s `bytes`. The edited screenshot hashed its unedited original, as intended.
+- For the two unedited, non-Live library JPEGs, `list` gives `sidecarBytes` equal to `bytes`, so some other resource the same size as the original is counted, and space estimates may count these photos twice. Each has only one file in `originals`. Not yet proven which resource it is; listing each asset's resource types will show it.
 - Over AFC the camera roll's folders are `100APPLE` to `122APPLE`, while ImageCaptureCore names them `YYYYMM_a`, so AFC paths and helper IDs share only the file name.
 
 ## Step 10: photos-helper
