@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/shaynemeyer/groundskeeper/internal/config"
+	"github.com/shaynemeyer/groundskeeper/internal/history"
 	"github.com/shaynemeyer/groundskeeper/internal/iphone"
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 )
@@ -88,6 +89,34 @@ func TestIPhoneScansPhotos(t *testing.T) {
 	}
 	if m, ok := scannerNamed(t, home, "iPhone photos"); !ok || m.Items != 4 || m.Error != "" {
 		t.Errorf("run details: %+v, %v", m, ok)
+	}
+	saved, err := history.LoadPhotoScan(history.PhotoScanPath(home))
+	if err != nil || len(saved.Photos.Assets) != 4 || len(saved.Photos.Duplicates.Groups) != 1 || saved.Photos.Source != iphone.SourceDevice {
+		t.Errorf("saved photo scan: %+v, %v", saved, err)
+	}
+}
+
+func TestIPhoneDrySavesNoPhotoScan(t *testing.T) {
+	home := fakeHome(t)
+	fakePhone(t, nil)
+	setSource(t, home, iphone.SourceDevice)
+	fakePhotos(t, phonePhotos)
+	run(t, "iphone", "--dry")
+	if _, err := history.LoadPhotoScan(history.PhotoScanPath(home)); !errors.Is(err, history.ErrNoPhotoScan) {
+		t.Errorf("got %v, want ErrNoPhotoScan", err)
+	}
+}
+
+func TestIPhoneFailedPhotoScanKeepsLastOne(t *testing.T) {
+	home := fakeHome(t)
+	fakePhone(t, nil)
+	setSource(t, home, iphone.SourceDevice)
+	fakePhotos(t, phonePhotos)
+	run(t, "iphone")
+	fakePhotos(t, map[string]string{"list": `{"error":"locked"}`})
+	run(t, "iphone")
+	if saved, err := history.LoadPhotoScan(history.PhotoScanPath(home)); err != nil || len(saved.Photos.Assets) != 4 {
+		t.Errorf("last photo scan lost: %+v, %v", saved, err)
 	}
 }
 

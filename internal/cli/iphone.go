@@ -72,7 +72,8 @@ func readPhone(log *logging.Logger, now time.Time) (*report.Phone, metrics.Scann
 	return &report.Phone{Time: now, Phone: p}, m, nil
 }
 
-// savePhone saves the iPhone snapshot and prunes ones older than six months.
+// savePhone saves the iPhone snapshot, prunes ones older than six months,
+// and saves the photo scan for the review.
 func savePhone(log *logging.Logger, home string, p report.Phone) error {
 	dir := history.PhoneDir(home)
 	if err := history.SavePhone(dir, history.PhoneSnapshot{Time: p.Time, Phone: p.Phone}); err != nil {
@@ -83,6 +84,14 @@ func savePhone(log *logging.Logger, home string, p report.Phone) error {
 		log.Warn("pruning iPhone snapshots failed", logging.Path(dir), logging.ErrKind(err))
 	}
 	log.Info("iphone snapshot saved", logging.Path(dir), logging.Count("pruned", removed))
+	if p.Photos == nil {
+		return nil
+	}
+	path := history.PhotoScanPath(home)
+	if err := history.SavePhotoScan(path, history.PhotoScan{Time: p.Time, Photos: *p.Photos}); err != nil {
+		return fmt.Errorf("saving photo scan: %w", err)
+	}
+	log.Info("photo scan saved", logging.Path(path))
 	return nil
 }
 

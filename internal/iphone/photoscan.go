@@ -7,11 +7,11 @@ import (
 
 // Photos is what a photo scan found in one source.
 type Photos struct {
-	Source         string
-	Assets         []Asset
-	Duplicates     Duplicates
-	OldScreenshots []string
-	LargestVideos  []string
+	Source         string     `json:"source"`
+	Assets         []Asset    `json:"assets"`
+	Duplicates     Duplicates `json:"duplicates"`
+	OldScreenshots []string   `json:"oldScreenshots"`
+	LargestVideos  []string   `json:"largestVideos"`
 }
 
 // ScanPhotos lists every asset in the helper's source, then finds duplicate

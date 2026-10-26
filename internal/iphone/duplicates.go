@@ -8,16 +8,16 @@ import (
 
 // Group is a set of duplicate assets, oldest first, with the ones to keep.
 type Group struct {
-	IDs  []string
-	Keep []string
+	IDs  []string `json:"ids"`
+	Keep []string `json:"keep"`
 	// Exact means every asset is a byte-identical copy of the others.
-	Exact bool
+	Exact bool `json:"exact"`
 }
 
 // Duplicates holds the groups found, and the assets analyze or hash failed on.
 type Duplicates struct {
-	Groups []Group
-	Failed []Failure
+	Groups []Group   `json:"groups"`
+	Failed []Failure `json:"failed"`
 }
 
 // FindDuplicates analyzes the photos among assets (videos aren't compared by

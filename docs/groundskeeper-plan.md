@@ -303,6 +303,7 @@ sequenceDiagram
   G-->>U: Recently Deleted (Mac library) or permanently deleted (device)
 ```
 
+- `gk iphone` saves its photo results as `~/.local/state/groundskeeper/photo-scan.json`, and the review starts from that rather than rescanning (step 11).
 - The approved selection is saved as `~/.local/state/groundskeeper/photo-review.json`: the source, and each approved photo's ID, date and sizes. Saving refuses IDs that weren't in the scan and favorites, edited photos and photos in albums (step 11).
 - The review runs in the terminal with Bubble Tea. Thumbnails are shown inline in iTerm2 or Kitty using their image protocols; in other terminals, pressing space opens the group in Quick Look (`qlmanage -p`).
 - Deleting from the Mac Photos library sends photos to **Recently Deleted** for 30 days on every device. This path is built but wasn't tested against a real library in the spike.
