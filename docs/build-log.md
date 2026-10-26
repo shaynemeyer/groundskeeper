@@ -2,6 +2,40 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 5: `clean browsers`
+
+### Built
+
+- `groundskeeper clean browsers [--browser chrome,firefox] [--include-offline] [--apply]`, in a new "Clean (dry run unless --apply)" help group, with help covering safety, examples and flags.
+- `internal/clean`: acts only on the folders the Browsers scanner lists for the cache tier, plus the offline tier with `--include-offline`. Site data is never selected, and no flag can include it.
+- Every folder gets an outcome (would move, moved to Trash, refused, failed), printed and logged with `dry_run`. Running browsers are reported with a message to quit them.
+- The scan package exports `BrowserFolderList`, `BrowserKeys`, `BrowserRoots` and `RunTool`, so scan and clean share one definition of each tier.
+- Log lines now carry the full command name (`clean browsers`), not just `browsers`.
+
+### Decisions
+
+- **Running check:** uses `ps -axo comm=` and matches the browser's executable name, instead of `pgrep`. `pgrep` returns exit code 1 both for "no match" and in ways that are hard to tell apart from real errors behind the runner interface. If `ps` fails, nothing is cleaned.
+- **Trash:** goes through macOS's `/usr/bin/trash -s` (macOS 15+), which uses the system Trash API, rather than renaming into `~/.Trash`. With `-s` a failed move exits non-zero (5 in testing), which is reported as `failed`.
+- **Safety check (`allowed`):** the path must be clean and absolute, must not itself be a symlink, and its resolved location must be inside a resolved browser root. Symlinked profile folders are never followed, because discovery only takes real folders.
+
+### Problems found and fixed
+
+- **Would have moved folders it couldn't read.** A live dry run showed Safari's caches as "0 B would move": without Full Disk Access macOS blocks reading them, and the measurement's skipped paths were ignored. A failing test (a locked folder inside a cache) came first, then the fix: any folder with unreadable parts is refused with "grant Full Disk Access to clean it".
+- **Test gaps found by mutation checks:**
+  - Disabling the running check first produced a compile error, not a test failure, so the check was redone properly; it now fails `TestRefusesRunningBrowser`.
+  - The symlinked-profile test was passing because discovery never follows that profile, not because of root containment. It was renamed to `TestSymlinkedProfileIsNeverFollowed`; containment is covered by the `allowed` unit test.
+
+### Verified
+
+- Mutation checks: removing the symlink check, root containment, clean-path check, running check, site-data exclusion, or the `--apply` gate each makes a test fail.
+- Live dry run on a real Mac: Chrome and DuckDuckGo (running) were refused, Safari (no Full Disk Access) refused, and an unknown browser name gives the list of valid ones.
+- End to end with the real `/usr/bin/trash`, in a throwaway home with a fake Firefox profile: the folder moved to the Trash, and the summary and log line were correct.
+
+### Open
+
+- `--browser` shell completion is planned for step 7.
+- Nothing has been applied to real browser data yet; only dry runs and the throwaway-home test.
+
 ## Step 4: Containers, Downloads, Browsers and Unused apps scanners
 
 ### Built

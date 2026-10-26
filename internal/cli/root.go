@@ -41,7 +41,10 @@ command yourself.`,
 	root.PersistentFlags().BoolVar(&global.verbose, "verbose", false, "also print debug log lines to stderr")
 	addScanFlags(root, scanOpts)
 
-	root.AddGroup(&cobra.Group{ID: groupReport, Title: "Report (read-only)"})
-	root.AddCommand(newScanCmd(global))
+	root.AddGroup(
+		&cobra.Group{ID: groupReport, Title: "Report (read-only)"},
+		&cobra.Group{ID: groupClean, Title: "Clean (dry run unless --apply)"},
+	)
+	root.AddCommand(newScanCmd(global), newCleanCmd(global))
 	return root
 }

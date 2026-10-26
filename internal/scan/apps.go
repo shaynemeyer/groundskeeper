@@ -39,7 +39,7 @@ func (a Apps) Name() string { return "Unused apps" }
 func (a Apps) Scan(ctx context.Context, home string) (Findings, error) {
 	run := a.Run
 	if run == nil {
-		run = runTool
+		run = RunTool
 	}
 	dirs := a.Dirs
 	if dirs == nil {

@@ -331,8 +331,9 @@ groundskeeper clean browsers [--browser chrome,firefox] [--include-offline] [--a
 Safety rules:
 - **Dry run by default.** Without `--apply`, it lists what would be removed and the total savings.
 - **Allowlist only.** It touches only the cache folders in the Safe tier, plus the Review tier when `--include-offline` is given. Site data, cookies, history and passwords are never touched, and there's no flag to include them.
-- **Refuses if the browser is running.** It checks with `pgrep` and asks you to quit that browser first, because deleting a cache while the browser has it open can corrupt it.
-- **Moves to the Trash instead of deleting**, so a mistake can be undone until you empty the Trash.
+- **Refuses if the browser is running.** It lists running executables with `ps -axo comm=` and matches the browser's executable name (such as `Google Chrome`), then asks you to quit that browser first, because deleting a cache while the browser has it open can corrupt it. If `ps` fails, nothing is cleaned.
+- **Moves to the Trash instead of deleting**, so a mistake can be undone until you empty the Trash. It uses macOS's `/usr/bin/trash -s` (macOS 15 and later), which goes through the system's Trash API.
+- **Refuses folders it can't fully read**, such as Safari's caches without Full Disk Access, so it never moves something it couldn't measure.
 - **Never scheduled.** launchd only ever runs the read-only report. Cleanup happens only when you run the command.
 - Every action is written to `~/Library/Logs/groundskeeper.log`.
 
@@ -444,12 +445,12 @@ With Full Disk Access, Groundskeeper can see browser profiles, app containers, M
 
 **What it runs**
 - External tools are looked up in `$PATH`, then in `/opt/homebrew/bin`, `/usr/local/bin` and `/opt/podman/bin`, because launchd jobs only get `/usr/bin:/bin:/usr/sbin:/sbin`. `brew` runs with `HOMEBREW_NO_AUTO_UPDATE=1` so a scan never makes it update over the network.
-- External tools (`git`, `mdls`, `plutil`, `ps`, `brew`, `pgrep`, `podman`, `osascript`, `photos-helper`, `qlmanage`) are started with [`exec.CommandContext`](https://pkg.go.dev/os/exec) and separate arguments, never through `sh -c`.
+- External tools (`git`, `mdls`, `plutil`, `ps`, `brew`, `trash`, `podman`, `osascript`, `photos-helper`, `qlmanage`) are started with [`exec.CommandContext`](https://pkg.go.dev/os/exec) and separate arguments, never through `sh -c`.
 - Notification text is passed to `osascript` as an argument (`on run argv`), not inserted into the AppleScript source.
 - `photos-helper` is called by absolute path from the install location, not looked up through `$PATH`.
 
 **What it deletes**
-- `clean browsers` resolves each path with `filepath.EvalSymlinks` and checks that the real path is still inside an allowlisted cache folder before moving it to the Trash. Anything else is refused and logged.
+- `clean browsers` only acts on the folders the Browsers scanner lists for the cache tier (and offline tier with `--include-offline`). It refuses a path that isn't clean, is itself a symlink, or whose resolved location is outside the browsers' own folders, and it never follows a symlinked profile folder. Anything refused is logged.
 - `clean iphone-apps` accepts only bundle IDs found in the last iPhone snapshot, and refuses Apple apps and anything in `iphoneKeep`.
 - `clean photos` deletes only asset IDs saved by `review photos`. It never accepts IDs from the command line.
 - History pruning deletes only files in the state directory whose names match the snapshot pattern.

@@ -161,6 +161,81 @@ func TestScanSectionsInReportOrder(t *testing.T) {
 	}
 }
 
+func chromeCache(t *testing.T, home string) string {
+	t.Helper()
+	cache := filepath.Join(home, "Library/Caches/Google/Chrome/Default/Cache")
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "data_1"), make([]byte, 50_000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return cache
+}
+
+// fakeTools answers ps with procs and records trash calls.
+func fakeTools(t *testing.T, procs string) *[]string {
+	t.Helper()
+	var trashed []string
+	toolRunner = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		switch name {
+		case "ps":
+			return []byte(procs), nil
+		case "/usr/bin/trash":
+			trashed = append(trashed, args[len(args)-1])
+			return nil, nil
+		}
+		return nil, exec.ErrNotFound
+	}
+	return &trashed
+}
+
+func TestCleanBrowsersDryRunByDefault(t *testing.T) {
+	home := fakeHome(t)
+	chromeCache(t, home)
+	trashed := fakeTools(t, "")
+	out := run(t, "clean", "browsers", "--browser", "chrome")
+
+	if !strings.Contains(out, "Dry run: nothing was changed. Add --apply to move") || !strings.Contains(out, "would move") {
+		t.Errorf("output = %q", out)
+	}
+	if len(*trashed) != 0 {
+		t.Errorf("dry run trashed %v", *trashed)
+	}
+	data, _ := os.ReadFile(filepath.Join(home, "Library/Logs/groundskeeper.log"))
+	if !strings.Contains(string(data), `"dry_run":true`) {
+		t.Error("dry run not logged")
+	}
+}
+
+func TestCleanBrowsersApplyMovesToTrash(t *testing.T) {
+	home := fakeHome(t)
+	cache := chromeCache(t, home)
+	trashed := fakeTools(t, "")
+	out := run(t, "clean", "browsers", "--apply")
+
+	if len(*trashed) != 1 || (*trashed)[0] != cache {
+		t.Fatalf("trashed %v, want %s", *trashed, cache)
+	}
+	if !strings.Contains(out, "Moved") || !strings.Contains(out, "to the Trash.") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestCleanBrowsersRunningBrowserMessage(t *testing.T) {
+	home := fakeHome(t)
+	chromeCache(t, home)
+	trashed := fakeTools(t, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n")
+	out := run(t, "clean", "browsers", "--apply")
+
+	if !strings.Contains(out, "Chrome is running, so it was skipped. Quit it and run the command again.") {
+		t.Errorf("output = %q", out)
+	}
+	if len(*trashed) != 0 {
+		t.Errorf("trashed %v while Chrome was running", *trashed)
+	}
+}
+
 func TestNoContentsOrSecretsInOutput(t *testing.T) {
 	home := fakeHome(t)
 	t.Setenv("GITHUB_TOKEN", marker)

@@ -71,19 +71,28 @@ never deletes anything. Suggested commands in the report are for you to run.`,
 	return cmd
 }
 
-func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error {
-	ctx := cmd.Context()
+// loadConfig returns the home folder and the config the --config flag names.
+func loadConfig(global *globalOptions) (string, config.Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return "", config.Config{}, err
 	}
-	cfgPath := global.configPath
-	if cfgPath == "" {
-		cfgPath = config.DefaultPath(home)
+	path := global.configPath
+	if path == "" {
+		path = config.DefaultPath(home)
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.Load(path)
 	if err != nil {
-		return fmt.Errorf("reading config %s: %w", cfgPath, err)
+		return "", cfg, fmt.Errorf("reading config %s: %w", path, err)
+	}
+	return home, cfg, nil
+}
+
+func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error {
+	ctx := cmd.Context()
+	home, cfg, err := loadConfig(global)
+	if err != nil {
+		return err
 	}
 	log, closeLog, err := openLog(cmd, home, cfg, global, opts.dry)
 	if err != nil {
@@ -156,6 +165,15 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	return nil
 }
 
+// commandName is the command path without the program name, such as
+// "clean browsers", or "scan" when the root runs a scan.
+func commandName(cmd *cobra.Command) string {
+	if !cmd.HasParent() {
+		return "scan"
+	}
+	return strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" ")
+}
+
 func expandAll(paths []string, home string) []string {
 	out := make([]string, len(paths))
 	for i, p := range paths {
@@ -170,13 +188,13 @@ func openLog(cmd *cobra.Command, home string, cfg config.Config, global *globalO
 		verbose = cmd.ErrOrStderr()
 	}
 	if dry && verbose != nil {
-		return logging.Text(verbose, cmd.Name()), io.NopCloser(nil), nil
+		return logging.Text(verbose, commandName(cmd)), io.NopCloser(nil), nil
 	}
 	if dry {
 		return logging.Discard(), io.NopCloser(nil), nil
 	}
 	path := filepath.Join(home, "Library", "Logs", "groundskeeper.log")
-	return logging.Open(path, logging.Options{Level: cfg.LogLevel, Cmd: cmd.Name(), Verbose: verbose})
+	return logging.Open(path, logging.Options{Level: cfg.LogLevel, Cmd: commandName(cmd), Verbose: verbose})
 }
 
 func printSummary(w io.Writer, rep report.Report, path string) {

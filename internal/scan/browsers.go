@@ -66,22 +66,8 @@ func (b Browsers) Name() string { return "Browsers" }
 
 // Scan finds every browser profile and measures each tier.
 func (b Browsers) Scan(ctx context.Context, home string) (Findings, error) {
-	lib := filepath.Join(home, "Library")
 	var f Findings
-	var parts []browserPart
-	for _, br := range chromiumBrowsers {
-		parts = append(parts, chromiumParts(lib, br, &f.Skipped)...)
-	}
-	parts = append(parts, firefoxParts(lib, &f.Skipped)...)
-	parts = append(parts,
-		browserPart{"Safari", "safari", "", tierCache, []string{
-			filepath.Join(lib, "Caches/com.apple.Safari"),
-			filepath.Join(lib, "Containers/com.apple.Safari/Data/Library/Caches"),
-		}},
-		browserPart{"DuckDuckGo", "duckduckgo", "", tierCache, []string{
-			filepath.Join(lib, "Caches/com.duckduckgo.macos.browser"),
-		}},
-	)
+	parts := browserParts(filepath.Join(home, "Library"), &f.Skipped)
 
 	var paths []string
 	for _, p := range parts {
@@ -100,6 +86,63 @@ func (b Browsers) Scan(ctx context.Context, home string) (Findings, error) {
 	}
 	f.Items = keep(items, b.MinBytes)
 	return f, nil
+}
+
+// BrowserFolders is one tier of one browser profile. The clean command
+// acts only on these, so scan and clean agree on what each tier holds.
+type BrowserFolders struct {
+	Browser, Key, Profile string
+	Tier, Safety          string
+	Paths                 []string
+}
+
+// BrowserFolderList returns every browser folder group under home.
+func BrowserFolderList(home string) []BrowserFolders {
+	var skipped []size.Skip
+	var out []BrowserFolders
+	for _, p := range browserParts(filepath.Join(home, "Library"), &skipped) {
+		out = append(out, BrowserFolders{p.browser, p.key, p.profile, p.tier.name, p.tier.safety, p.paths})
+	}
+	return out
+}
+
+// BrowserKeys lists the --browser names, such as "chrome".
+func BrowserKeys() []string {
+	keys := []string{}
+	for _, br := range chromiumBrowsers {
+		keys = append(keys, br.key)
+	}
+	return append(keys, "firefox", "safari", "duckduckgo")
+}
+
+// BrowserRoots are the only folders browser cleanup may touch anything inside.
+func BrowserRoots(home string) []string {
+	lib := filepath.Join(home, "Library")
+	roots := append(browserCacheRoots(lib),
+		filepath.Join(lib, "Application Support/Firefox/Profiles"),
+		filepath.Join(lib, "Containers/com.apple.Safari/Data/Library/Caches"),
+	)
+	for _, br := range chromiumBrowsers {
+		roots = append(roots, filepath.Join(lib, "Application Support", br.rel))
+	}
+	return roots
+}
+
+func browserParts(lib string, skipped *[]size.Skip) []browserPart {
+	var parts []browserPart
+	for _, br := range chromiumBrowsers {
+		parts = append(parts, chromiumParts(lib, br, skipped)...)
+	}
+	parts = append(parts, firefoxParts(lib, skipped)...)
+	return append(parts,
+		browserPart{"Safari", "safari", "", tierCache, []string{
+			filepath.Join(lib, "Caches/com.apple.Safari"),
+			filepath.Join(lib, "Containers/com.apple.Safari/Data/Library/Caches"),
+		}},
+		browserPart{"DuckDuckGo", "duckduckgo", "", tierCache, []string{
+			filepath.Join(lib, "Caches/com.duckduckgo.macos.browser"),
+		}},
+	)
 }
 
 func (p browserPart) item(bytes int64) Item {

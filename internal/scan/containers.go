@@ -42,7 +42,7 @@ func (c Containers) Name() string { return "Containers" }
 func (c Containers) Scan(ctx context.Context, home string) (Findings, error) {
 	run := c.Run
 	if run == nil {
-		run = runTool
+		run = RunTool
 	}
 	items := []Item{{
 		Section: "Containers",

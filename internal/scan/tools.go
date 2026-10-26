@@ -28,8 +28,8 @@ func findTool(name string) string {
 // Runner runs a command and returns its stdout. Tests replace it.
 type Runner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// runTool finds name and runs it with args, never through a shell.
-func runTool(ctx context.Context, name string, args ...string) ([]byte, error) {
+// RunTool finds name and runs it with args, never through a shell.
+func RunTool(ctx context.Context, name string, args ...string) ([]byte, error) {
 	path := findTool(name)
 	if path == "" {
 		return nil, exec.ErrNotFound
