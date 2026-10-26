@@ -2,6 +2,52 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 9: iPhone storage, apps and shared files
+
+### Built
+
+- **Reader and recorder (`internal/iphone`, `internal/iphone/record`):**
+  - `Read` gets lockdown values, `com.apple.disk_usage`, user apps from its own installation_proxy `Browse` with `ReturnAttributes` (go-ios's `BrowseUserApps` returns no sizes), and the files under each file-sharing app's `/Documents`.
+  - go-ios's logger is set to discard, and errors are reported by kind (`ErrNoDevice`, `ErrNotTrusted`, `ErrRead`, `ErrUninstall`).
+  - `go run ./internal/iphone/record` saves a read through `fixtures.Scrub` to `testdata/phone.json`.
+- **`Parse`:** model, iOS version, space, apps largest first, and shared containers with their five largest files.
+- **`gk iphone`:** reads the phone first, so a missing or untrusted phone fails before the Mac scan. Then it scans the Mac and writes the report with an iPhone section. iPhone snapshots go to the state directory's `iphone` folder (`0600`, six-month pruning). `--dry` saves nothing.
+- **`gk clean iphone-apps <bundleID>...`:** only IDs from the last iPhone snapshot. Refuses Apple's apps and `iphoneKeep`. Dry run unless `--apply`; with it, asks per app, warns the data is lost for good, and suggests offloading. Only `y` or `yes` uninstalls. IDs complete from the snapshot.
+- **Probably unused flag:** `history.Unused` flags apps whose data size stayed exactly the same for `iphoneUnusedDays`, in scans no more than 30 days apart. The report lists them in their own table with a shell-quoted hint and the number of scans the list is based on.
+- **Spinner:** `gk scan` and `gk iphone` show the current step on stderr ("Reading iPhone", "Scanning <scanner>", "Writing report").
+
+### Decisions
+
+- Uninstalls are logged but not saved as clean snapshots, which count space freed on the Mac.
+- The unused flag needs scans at most 30 days apart, because the launchd job doesn't read the phone, and two scans months apart can't show an app went unused in between.
+- The spinner is a small ticker in `internal/ui`, not Bubble Tea, which would put the terminal in raw mode and take over Ctrl-C for one status line. It is silent unless stdout and stderr are both terminals, and with `--verbose`.
+
+### Problems found
+
+- **No progress shown during a scan.** The user saw only a blinking cursor during `gk iphone`. Root cause: the spinner was deferred in step 1 and never built; there was no code that wrote progress at all.
+- **The unused flag flagged apps whose size had just changed.** Found while writing `Unused`: when the newest snapshot didn't match, the run's start stayed at zero time, which counts as older than any cutoff. A test with an app that changed since the last scan failed with the bug put back.
+- **Sparse history would give confident flags.** One scan now and one in four months would flag every app with the same size in both. Fixed by the 30-day gap rule; a test with a 40-day gap fails without it.
+- **go-ios brought in `golang.org/x/net` v0.57.0**, which govulncheck flagged (GO-2026-6617, 6612, 6611, 6603). Upgraded to v0.61.0.
+
+### Verified
+
+- `go test -race ./...` and `make test` (with govulncheck) pass.
+- Mutation checks: removing the `iphoneKeep` check, the zero-time check and the 30-day gap each made a test fail.
+- Spinner under a pseudo-terminal (`script`): frames animate and the label follows each scanner. Piped into `cat`, no spinner lines are written.
+- On the real phone (iOS 27.0.1), with a throwaway App Store app installed for the test:
+  - The dry run listed it (172.7 MB) and changed nothing.
+  - `--apply` showed the app and data sizes and the warning, and `y` uninstalled it in under a second, with no prompt on the phone.
+  - On a second app, answering `n` and pressing Enter alone each kept it (`kept, not confirmed`, then "Nothing was uninstalled.").
+  - `com.apple.Pages` was refused without a prompt.
+  - The next `gk iphone` snapshot no longer had the app.
+  - `gk logs --cmd clean` showed each action with bundle IDs, bytes and outcomes, and no device name or UDID.
+
+### Open
+
+- Whether apps you never open keep exactly the same data size. If iOS changes it in the background, they are never flagged and the rule needs a tolerance. A few apps' sizes changed between scans minutes apart. Check after a few weeks of scans.
+- iPhone history only grows when `gk iphone` is run by hand, because the phone usually isn't connected at the scheduled time.
+- Why one app's data size differs from iPhone Storage by 18% (from step 8).
+
 ## Step 8: iPhone spike
 
 ### Built

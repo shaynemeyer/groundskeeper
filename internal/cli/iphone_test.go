@@ -246,3 +246,22 @@ func TestIPhoneFirstScanSaysUnusedNeedsHistory(t *testing.T) {
 		t.Error("first scan should say the unused list needs more history")
 	}
 }
+
+func TestCleanIPhoneAppsNothingUninstalledSaysSo(t *testing.T) {
+	fakeHome(t)
+	fakePhone(t, nil)
+	run(t, "iphone")
+	fakeUninstaller(t)
+	for args, want := range map[string]string{
+		"apply": "Nothing was uninstalled.",
+		"dry":   "Dry run: nothing would be uninstalled.",
+	} {
+		cmd := []string{"clean", "iphone-apps", "com.apple.Pages"}
+		if args == "apply" {
+			cmd = append(cmd, "--apply")
+		}
+		if out := runWithInput(t, "", cmd...); !strings.Contains(out, want) || strings.Contains(out, "0 B") {
+			t.Errorf("%s: output = %q", args, out)
+		}
+	}
+}

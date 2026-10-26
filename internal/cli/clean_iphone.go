@@ -126,6 +126,7 @@ func confirmUninstall(w io.Writer, in *bufio.Reader, a iphone.App) bool {
 
 func printUninstalls(w io.Writer, actions []clean.AppAction, apply bool) {
 	var total int64
+	var count int
 	for _, a := range actions {
 		status := a.Outcome
 		if a.Reason != "" {
@@ -133,12 +134,18 @@ func printUninstalls(w io.Writer, actions []clean.AppAction, apply bool) {
 		}
 		if a.Outcome == clean.Uninstalled || a.Outcome == clean.WouldUninstall {
 			total += a.App.Bytes()
+			count++
 		}
 		fmt.Fprintf(w, "  %10s  %-28s %s\n             %s\n", ui.Bytes(a.App.Bytes()), a.App.Name, status, a.App.BundleID)
 	}
-	if apply {
+	switch {
+	case count == 0 && apply:
+		fmt.Fprintln(w, "Nothing was uninstalled.")
+	case count == 0:
+		fmt.Fprintln(w, "Dry run: nothing would be uninstalled.")
+	case apply:
 		fmt.Fprintf(w, "Uninstalled apps freed about %s on the iPhone.\n", ui.Bytes(total))
-		return
+	default:
+		fmt.Fprintf(w, "Dry run: nothing was changed. Add --apply to uninstall and free about %s.\n", ui.Bytes(total))
 	}
-	fmt.Fprintf(w, "Dry run: nothing was changed. Add --apply to uninstall and free about %s.\n", ui.Bytes(total))
 }
