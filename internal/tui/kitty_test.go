@@ -28,14 +28,17 @@ func writeJPEG(t *testing.T) string {
 }
 
 func TestSendImage(t *testing.T) {
-	seq, err := sendImage(7, writeJPEG(t), 30, 20)
+	seq, err := sendImage(7, writeJPEG(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"a=T", "f=100", "i=7", "U=1", "c=30", "r=20", "q=2"} {
+	for _, want := range []string{"f=100", "i=7", "q=2"} {
 		if !strings.Contains(seq, want) {
 			t.Errorf("command lacks %s: %.80q", want, seq)
 		}
+	}
+	if strings.Contains(seq, "a=") || strings.Contains(seq, "U=1") {
+		t.Errorf("sending should only transmit, the default action: %.80q", seq)
 	}
 	if len(seq) < 100 {
 		t.Errorf("command carries no image data: %q", seq)
@@ -47,7 +50,7 @@ func TestSendImageNotJPEG(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not a jpeg"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sendImage(1, path, 30, 20); err == nil {
+	if _, err := sendImage(1, path); err == nil {
 		t.Error("sendImage accepted a file that isn't a JPEG")
 	}
 }
@@ -70,5 +73,23 @@ func TestPlaceholders(t *testing.T) {
 func TestDeleteImage(t *testing.T) {
 	if got, want := deleteImage(5), "\x1b_Ga=d,d=I,i=5,q=2\x1b\\"; got != want {
 		t.Errorf("deleteImage(5) = %q, want %q", got, want)
+	}
+}
+
+func TestPlaceImage(t *testing.T) {
+	if got, want := placeImage(3, 27, 18), "\x1b_Gq=2,i=3,p=1,U=1,c=27,r=18,a=p\x1b\\"; got != want {
+		t.Errorf("placeImage = %q, want %q", got, want)
+	}
+}
+
+func TestThumbSize(t *testing.T) {
+	for _, c := range []struct{ n, width, cols, rows int }{
+		{2, 120, 30, 20}, // room to spare: full size
+		{3, 88, 27, 18},  // shrunk to fit
+		{3, 30, 8, 5},    // below minThumbCols
+	} {
+		if cols, rows := thumbSize(c.n, c.width); cols != c.cols || rows != c.rows {
+			t.Errorf("thumbSize(%d, %d) = %d, %d, want %d, %d", c.n, c.width, cols, rows, c.cols, c.rows)
+		}
 	}
 }

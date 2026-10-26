@@ -34,6 +34,7 @@ type Review struct {
 	paths     map[string]string // thumbnail JPEGs by ID
 	photoErr  string            // why photos can't be shown
 	images    map[string]int    // Kitty image IDs by photo ID, once sent
+	placed    map[int]int       // columns each image is placed at
 	lastImage int
 	width     int
 	quitting  bool
@@ -43,7 +44,7 @@ type Review struct {
 // through viewer.
 func NewReview(groups []iphone.Group, assets []iphone.Asset, viewer Viewer) Review {
 	r := Review{groups: groups, assets: map[string]iphone.Asset{}, decision: make([]int, len(groups)),
-		viewer: viewer, paths: map[string]string{}, images: map[string]int{}}
+		viewer: viewer, paths: map[string]string{}, images: map[string]int{}, placed: map[int]int{}}
 	for _, a := range assets {
 		r.assets[a.ID] = a
 	}
@@ -95,10 +96,10 @@ func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return r, nil
 		}
 		r.images[msg.photo] = msg.image
-		return r, tea.Raw(msg.seq)
+		return r, tea.Raw(msg.seq + r.place()) // one write, so the image arrives before its placement
 	case tea.WindowSizeMsg:
 		r.width = msg.Width
-		return r, nil
+		return r, r.placeCmd()
 	case previewMsg:
 		if msg.err != nil {
 			r.note = "Quick Look couldn't open the photos."
@@ -126,7 +127,7 @@ func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return r.decide(skipped)
 	case "p":
 		r.move(max(r.group-1, 0))
-		return r, r.fetch()
+		return r, tea.Batch(r.fetch(), r.placeCmd())
 	case "q":
 		r.saved, r.quitting = true, true
 		return r, tea.Quit
@@ -162,7 +163,7 @@ func (r Review) decide(d int) (tea.Model, tea.Cmd) {
 		return r, tea.Quit
 	}
 	r.move(r.group + 1)
-	return r, r.fetch()
+	return r, tea.Batch(r.fetch(), r.placeCmd())
 }
 
 func (r *Review) move(group int) {

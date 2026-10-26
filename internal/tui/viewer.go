@@ -99,7 +99,7 @@ func (r *Review) send(paths map[string]string) tea.Cmd {
 		r.lastImage++
 		image, path := r.lastImage, paths[id]
 		cmds = append(cmds, func() tea.Msg {
-			seq, err := sendImage(image, path, thumbCols, thumbRows)
+			seq, err := sendImage(image, path)
 			return imageMsg{photo: id, image: image, seq: seq, err: err}
 		})
 	}
@@ -116,6 +116,35 @@ func (r Review) Cleanup() string {
 	return b.String()
 }
 
+// place returns the commands that place the current group's sent images
+// at the size the window allows, skipping those already placed at it.
+func (r *Review) place() string {
+	if len(r.groups) == 0 {
+		return ""
+	}
+	ids := r.groups[r.group].IDs
+	cols, rows := thumbSize(len(ids), r.width)
+	if cols < minThumbCols {
+		return ""
+	}
+	var b strings.Builder
+	for _, id := range ids {
+		if image := r.images[id]; image != 0 && r.placed[image] != cols {
+			b.WriteString(placeImage(image, cols, rows))
+			r.placed[image] = cols
+		}
+	}
+	return b.String()
+}
+
+// placeCmd writes what place returns, if anything.
+func (r *Review) placeCmd() tea.Cmd {
+	if p := r.place(); p != "" {
+		return tea.Raw(p)
+	}
+	return nil
+}
+
 // imageRow draws the group's thumbnails side by side with Keep or Extra
 // under each, or nothing when none has been sent or the review is ending.
 func (r Review) imageRow() string {
@@ -124,17 +153,18 @@ func (r Review) imageRow() string {
 	if !shown || r.quitting {
 		return ""
 	}
-	if len(ids)*(thumbCols+2) > r.width {
+	cols, rows := thumbSize(len(ids), r.width)
+	if cols < minThumbCols {
 		return "Widen the window to see the photos.\n\n"
 	}
-	lines := make([]string, thumbRows+1)
+	lines := make([]string, rows+1)
 	for i, id := range ids {
 		var cells []string
 		if image := r.images[id]; image != 0 {
-			cells = placeholders(image, thumbCols, thumbRows)
+			cells = placeholders(image, cols, rows)
 		}
-		for row := range thumbRows {
-			cell := strings.Repeat(" ", thumbCols)
+		for row := range rows {
+			cell := strings.Repeat(" ", cols)
 			if cells != nil {
 				cell = cells[row]
 			}
@@ -147,7 +177,7 @@ func (r Review) imageRow() string {
 		if r.keep[r.group][id] {
 			label = "Keep"
 		}
-		lines[thumbRows] += fmt.Sprintf("  %-*s", thumbCols, marker+label)
+		lines[rows] += fmt.Sprintf("  %-*s", cols, marker+label)
 	}
 	return strings.Join(lines, "\n") + "\n\n"
 }

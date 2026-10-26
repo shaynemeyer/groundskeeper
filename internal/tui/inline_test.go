@@ -93,7 +93,7 @@ func TestReviewInlineShowsGroupImages(t *testing.T) {
 	m, cmd := r.Update(key("enter"))
 	r, raw = drain(m.(Review), cmd)
 	view := r.View().Content
-	if !strings.Contains(raw, "i=4,") || !shows(view, 4) || !shows(view, 5) || shows(view, 1) {
+	if !strings.Contains(raw, "i=4,p=1,U=1") || !shows(view, 4) || !shows(view, 5) || shows(view, 1) {
 		t.Errorf("second group should show images 4 and 5 only:\n%q", view)
 	}
 }
@@ -108,8 +108,24 @@ func TestReviewNotInlineSendsNoImages(t *testing.T) {
 	}
 }
 
+func TestReviewInlineShrinksToFit(t *testing.T) {
+	r, raw := inlineReview(t, false, 88)
+	if !strings.Contains(raw, "i=1,p=1,U=1,c=27,r=18") || !shows(r.View().Content, 1) {
+		t.Errorf("3 photos in 88 columns should be placed at 27 by 18:\n%q", raw)
+	}
+	m, cmd := r.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	r, raw = drain(m.(Review), cmd)
+	if !strings.Contains(raw, "i=1,p=1,U=1,c=30,r=20") {
+		t.Errorf("widening should place the images again at 30 by 20: %q", raw)
+	}
+	m, cmd = r.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if _, raw = drain(m.(Review), cmd); raw != "" {
+		t.Errorf("an unchanged width placed the images again: %q", raw)
+	}
+}
+
 func TestReviewInlineNarrowWindow(t *testing.T) {
-	r, _ := inlineReview(t, false, 60)
+	r, _ := inlineReview(t, false, 30)
 	view := r.View().Content
 	if strings.ContainsRune(view, kitty.Placeholder) || !strings.Contains(view, "Widen the window") {
 		t.Errorf("a narrow window should ask to widen it:\n%s", view)
@@ -134,5 +150,17 @@ func TestReviewInlineQuitDropsAndDeletesImages(t *testing.T) {
 	want := deleteImage(1) + deleteImage(2) + deleteImage(3)
 	if got := r.Cleanup(); got != want {
 		t.Errorf("Cleanup() = %q, want %q", got, want)
+	}
+}
+
+func TestReviewInlineGoingBackPlacesAgain(t *testing.T) {
+	r, _ := inlineReview(t, false, 120)
+	m, cmd := r.Update(key("enter"))
+	r, _ = drain(m.(Review), cmd)
+	m, cmd = r.Update(tea.WindowSizeMsg{Width: 88, Height: 50})
+	r, _ = drain(m.(Review), cmd)
+	m, cmd = r.Update(key("p"))
+	if _, raw := drain(m.(Review), cmd); !strings.Contains(raw, "i=1,p=1,U=1,c=27,r=18") {
+		t.Errorf("going back to 3 photos in 88 columns should place them at 27 by 18: %q", raw)
 	}
 }
