@@ -3,6 +3,7 @@ module github.com/shaynemeyer/groundskeeper
 go 1.27.3
 
 require (
+	charm.land/bubbletea/v2 v2.1.0
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/danielpaulus/go-ios v1.3.2

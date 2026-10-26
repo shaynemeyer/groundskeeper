@@ -82,16 +82,21 @@ See also: gk help safety, gk history, gk stats`,
 	return cmd
 }
 
+// configPath returns the config file the --config flag names, or the default.
+func configPath(global *globalOptions, home string) string {
+	if global.configPath != "" {
+		return global.configPath
+	}
+	return config.DefaultPath(home)
+}
+
 // loadConfig returns the home folder and the config the --config flag names.
 func loadConfig(global *globalOptions) (string, config.Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", config.Config{}, err
 	}
-	path := global.configPath
-	if path == "" {
-		path = config.DefaultPath(home)
-	}
+	path := configPath(global, home)
 	cfg, err := config.Load(path)
 	if err != nil {
 		return "", cfg, fmt.Errorf("reading config %s: %w", path, err)

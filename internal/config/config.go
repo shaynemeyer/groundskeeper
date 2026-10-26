@@ -62,6 +62,35 @@ func Load(path string) (Config, error) {
 	return cfg, err
 }
 
+// SetPhotosSource saves source as photosSource in the config file at path,
+// keeping every other key in it. The file is created if it's missing, and
+// an unreadable one is left alone.
+func SetPhotosSource(path, source string) error {
+	values := map[string]json.RawMessage{}
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err == nil {
+		if err := json.Unmarshal(data, &values); err != nil {
+			return err
+		}
+	}
+	if values["photosSource"], err = json.Marshal(source); err != nil {
+		return err
+	}
+	if data, err = json.MarshalIndent(values, "", "  "); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
 // Expand replaces a leading "~" with home.
 func Expand(path, home string) string {
 	if path == "~" {
