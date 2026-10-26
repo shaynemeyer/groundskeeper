@@ -8,6 +8,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 
 - **Increment 1:** the Swift package `helpers/photos-helper` (Swift 6 language mode, macOS 26+) with `list --source device`. It opens the first iPhone on USB with ImageCaptureCore and writes `{"source","assets":[{id, created, width, height, bytes, sidecarBytes, burst}]}` to stdout. Errors are `{"error": "no-device" | "locked" | "timeout"}` with exit 1; bad arguments print usage and exit 2. `make build` also builds it into `bin/photos-helper`.
 - **Increment 2:** `analyze --source device` reads a JSON array of asset IDs on stdin, fetches a 512-pixel thumbnail of each from the phone, and runs Vision's `GenerateImageFeaturePrintRequest` and `CalculateImageAestheticsScoresRequest` (the Swift API, macOS 15+). It writes `{"source","analyses":[{id, featurePrint, aesthetics, utility}],"failed":[{id, reason}]}`, where reason is `not-found`, `thumbnail` or `vision`.
+- **Increment 3:** `thumbnail --source device --out <dir>` reads asset IDs on stdin and saves the phone's 1024-pixel JPEG thumbnail of each, without re-encoding. It writes `{"source","thumbnails":[{id, path}],"failed":[{id, reason}]}`; `write` joins the failure reasons. Flags are parsed as `--name value` pairs, and unknown or missing flags exit 2.
 
 ### Decisions
 
@@ -16,12 +17,15 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Open errors aren't final.** With the phone unlocked, each run still got "access restricted", an open error -9943, then "access restriction removed", and the catalog arrived without retrying. So `list` waits up to 120 s for the catalog and reports `locked` only if the phone is still restricted then.
 - **Feature-print distance is squared Euclidean.** Plain Euclidean distance over the raw floats differed from Vision's `distance(to:)` by up to 0.25 on 19 pairs of real photos; its square differed by at most 6.6e-8. So `featurePrint` is the raw 768 float32 values, and step 11's Go grouping computes the same distance.
 - **512-pixel thumbnails.** On 20 photos, 512 and 1024 pixels both took about 130 ms per photo to fetch (most of it USB round trips) and Vision under 20 ms, with near-identical scores (aesthetics 0.27 against 0.24 on one photo).
+- **Thumbnail files are named by the first 16 bytes of the ID's SHA-256.** IDs come from the phone, so they're never used as paths. The directory is created `0700` and the files `0600`: they are the user's photos.
+- **1024-pixel review thumbnails.** Fetching took the same time as 512 in increment 2, and Quick Look needs enough detail to tell near-duplicates apart.
 - No GPS (`gpsString`), file contents or device name in the output. `sidecarBytes` counts Live Photo videos and edit files (192 sidecars on the test phone), so space estimates aren't short.
 
 ### Verified
 
 - On the phone (iOS 27.0.1): 1,162 assets, all with unique IDs, a date and dimensions; no GPS or location keys in the output. Folders are named `YYYYMM__`, not `100APPLE`.
 - Bad arguments exit 2 with usage.
+- `thumbnail` for the 5 newest photos plus a made-up ID, into a new nested directory: 5 JPEGs at 768x1024 or 1018x764, both directories `drwx------`, files `-rw-------`, names 32 hex characters, the made-up ID `not-found`. ImageIO found no GPS dictionary in any of them. Into a read-only directory, every photo failed with `write`. A missing `--out`, `--out` on `list`, an unknown flag and `--source mac-library` each exit 2.
 - `analyze` on all 1,162 assets plus one made-up ID: 140 s, 1,162 analyses, every print 3,072 bytes, the made-up ID reported as `not-found`.
 
 ### Problems found
@@ -35,6 +39,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Whether file names stay the same after other photos are deleted.
 - `utility` isn't a screenshot detector: it flagged 26 of 53 PNGs (iPhone screenshots are PNG) and 249 of 1,077 HEIC photos. Step 11 needs another way to find screenshots.
 - Videos are analyzed from their poster frame.
+- `thumbnail` doesn't tighten the permissions of an `--out` directory that already exists, and doesn't delete old thumbnails. Step 11's Go side creates and cleans that directory.
 - Sharpness and face quality for best-shot scoring aren't computed yet.
 
 ## Step 9: iPhone storage, apps and shared files

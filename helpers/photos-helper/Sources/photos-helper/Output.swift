@@ -6,6 +6,19 @@ struct Listing: Encodable {
     let assets: [Asset]
 }
 
+/// An asset a command couldn't handle, with the step that failed.
+struct Failure: Encodable {
+    enum Reason: String, Encodable {
+        case notFound = "not-found"
+        case thumbnail
+        case vision
+        case write
+    }
+
+    let id: String
+    let reason: Reason
+}
+
 /// Error kinds. Messages from Apple's frameworks are never passed through,
 /// because ImageCaptureCore's contain the iPhone's name.
 enum ErrorKind: String, Error, Encodable {

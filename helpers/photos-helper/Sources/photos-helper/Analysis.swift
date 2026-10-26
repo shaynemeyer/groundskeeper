@@ -22,21 +22,9 @@ struct Analysis: Encodable {
     let utility: Bool
 }
 
-/// An asset that couldn't be analyzed, with the step that failed.
-struct Failure: Encodable {
-    enum Reason: String, Encodable {
-        case notFound = "not-found"
-        case thumbnail
-        case vision
-    }
-
-    let id: String
-    let reason: Reason
-}
-
 /// Longest side of the thumbnail Vision runs on. Larger thumbnails took as
 /// long to fetch and gave almost the same scores.
-let thumbnailPixels = 512
+let analysisPixels = 512
 
 /// Analyzes the given assets one at a time, in the order given.
 @MainActor
@@ -68,14 +56,11 @@ private func analyze(_ image: CGImage, id: String) async throws -> Analysis {
     return Analysis(id: id, featurePrint: print.data, aesthetics: scores.overallScore, utility: scores.isUtility)
 }
 
-/// Fetches a JPEG thumbnail from the phone and decodes it.
+/// Fetches a thumbnail from the phone and decodes it.
 @MainActor
 private func thumbnail(of file: ICCameraFile) async -> CGImage? {
-    let data: Data? = await withCheckedContinuation { done in
-        file.requestThumbnailData(options: [.imageSourceThumbnailMaxPixelSize: thumbnailPixels]) { data, _ in
-            done.resume(returning: data)
-        }
-    }
-    guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    guard let data = await thumbnailData(of: file, pixels: analysisPixels),
+        let source = CGImageSourceCreateWithData(data as CFData, nil)
+    else { return nil }
     return CGImageSourceCreateImageAtIndex(source, 0, nil)
 }
