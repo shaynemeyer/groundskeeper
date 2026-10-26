@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"image"
+	"image/jpeg"
 	"io"
 	"os"
 	"path/filepath"
@@ -152,5 +154,45 @@ func TestReviewPhotosFetchesThumbnailsAndRemovesThem(t *testing.T) {
 	}
 	if info, err := os.Stat(outDir); err == nil {
 		t.Errorf("thumbnail folder left behind: %v", info.Mode())
+	}
+}
+
+// sendsImages runs gk review photos with TERM_PROGRAM set to term and
+// reports whether the fetched thumbnail led to a command sending it.
+func sendsImages(t *testing.T, term string) bool {
+	t.Helper()
+	t.Setenv("TERM_PROGRAM", term)
+	home := fakeHome(t)
+	savePhotoScan(t, home, oneGroup)
+	photoRunner = func(_ context.Context, _ []byte, _ string, args ...string) ([]byte, error) {
+		path := filepath.Join(args[len(args)-1], "1.jpg")
+		f, err := os.Create(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		if err := jpeg.Encode(f, image.NewRGBA(image.Rect(0, 0, 4, 4)), nil); err != nil {
+			return nil, err
+		}
+		return []byte(`{"source":"device","thumbnails":[{"id":"F/IMG_0001.HEIC","path":"` + path + `"}],"failed":[]}`), nil
+	}
+	t.Cleanup(func() { photoRunner = iphone.RunHelper })
+	var sends bool
+	reviewRunner = func(r tui.Review, _ io.Writer) (tui.Review, error) {
+		m, cmd := r.Update(r.Init()())
+		sends = cmd != nil
+		return m.(tui.Review), nil
+	}
+	t.Cleanup(func() { reviewRunner = reviewInTerminal })
+	run(t, "review", "photos")
+	return sends
+}
+
+func TestReviewPhotosInlineOnlyInGhostty(t *testing.T) {
+	if !sendsImages(t, "ghostty") {
+		t.Error("Ghostty should get inline images")
+	}
+	if sendsImages(t, "Apple_Terminal") {
+		t.Error("Terminal.app shouldn't get inline images")
 	}
 }

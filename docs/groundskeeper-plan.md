@@ -305,7 +305,7 @@ sequenceDiagram
 
 - `gk iphone` saves its photo results as `~/.local/state/groundskeeper/photo-scan.json`, and the review starts from that rather than rescanning (step 11).
 - The approved selection is saved as `~/.local/state/groundskeeper/photo-review.json`: the source, and each approved photo's ID, date and sizes. Saving refuses IDs that weren't in the scan and favorites, edited photos and photos in albums (step 11).
-- The review runs in the terminal with Bubble Tea. Thumbnails are shown inline with the Kitty graphics protocol's Unicode placeholders, which worked from Bubble Tea v2 in Ghostty 1.3.1 (spike, step 11); in other terminals, pressing space opens the group in Quick Look (`qlmanage -p`).
+- The review runs in the terminal with Bubble Tea. Thumbnails are shown inline with the Kitty graphics protocol's Unicode placeholders, which worked from Bubble Tea v2 in Ghostty 1.3.1 (spike, step 11), so they're shown inline when `TERM_PROGRAM` is `ghostty`; in any terminal, pressing space opens the group in Quick Look (`qlmanage -p`).
 - Deleting from the Mac Photos library sends photos to **Recently Deleted** for 30 days on every device. This path is built but wasn't tested against a real library in the spike.
 - Deleting from the phone over USB is **permanent**. The confirmation says so plainly, and how strongly to guard it (a typed confirmation, or importing to the Mac first) is decided in step 11.
 

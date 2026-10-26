@@ -47,11 +47,11 @@ func newReviewPhotosCmd(global *globalOptions) *cobra.Command {
 		Use:   "photos",
 		Short: "Step through duplicate photo groups",
 		Long: `Shows the duplicate groups from the last gk iphone, one at a time, with the
-best shot marked Keep and the rest marked Extra. Press space to see the
-group's photos in Quick Look; they're fetched from the phone or the Photos
-library into a private temporary folder that's removed when the review
-ends. Accept a group as it is,
-change which photos are kept, or skip it. The extras of the groups you
+best shot marked Keep and the rest marked Extra. In Ghostty the photos are
+shown in the screen; in any terminal, press space to see them in Quick
+Look. They're fetched from the phone or the Photos library into a private
+temporary folder that's removed when the review ends. Accept a group as
+it is, change which photos are kept, or skip it. The extras of the groups you
 accept are saved as the photos to delete.
 
 Favorites, edited photos and photos in albums are always kept, and every
@@ -95,7 +95,8 @@ func runReviewPhotos(cmd *cobra.Command, global *globalOptions) error {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	viewer := photoViewer(cmd.Context(), home, scan.Photos.Source, dir)
+	inline := os.Getenv("TERM_PROGRAM") == "ghostty"
+	viewer := photoViewer(cmd.Context(), home, scan.Photos.Source, dir, inline)
 	r, err := reviewRunner(tui.NewReview(groups, scan.Photos.Assets, viewer), out)
 	if errors.Is(err, errNoTerminal) {
 		return fmt.Errorf("%w: run gk review photos in a terminal", err)
@@ -126,8 +127,9 @@ func runReviewPhotos(cmd *cobra.Command, global *globalOptions) error {
 }
 
 // photoViewer fetches thumbnails through photos-helper into dir, which
-// os.MkdirTemp made 0700, and previews them with Quick Look.
-func photoViewer(ctx context.Context, home, source, dir string) tui.Viewer {
+// os.MkdirTemp made 0700, and previews them with Quick Look. Inline shows
+// them in the screen too, which only Ghostty has been tested to do.
+func photoViewer(ctx context.Context, home, source, dir string, inline bool) tui.Viewer {
 	h := iphone.Helper{Path: doctor.HelperPath(home), Source: source, Run: photoRunner}
 	return tui.Viewer{
 		Thumbnails: func(ids []string) (map[string]string, error) {
@@ -144,6 +146,7 @@ func photoViewer(ctx context.Context, home, source, dir string) tui.Viewer {
 		Preview: func(paths []string) *exec.Cmd {
 			return exec.CommandContext(ctx, "qlmanage", append([]string{"-p"}, paths...)...)
 		},
+		Inline: inline,
 	}
 }
 
@@ -174,5 +177,7 @@ func reviewInTerminal(r tui.Review, out io.Writer) (tui.Review, error) {
 	if err != nil {
 		return r, err
 	}
-	return m.(tui.Review), nil
+	r = m.(tui.Review)
+	fmt.Fprint(out, r.Cleanup())
+	return r, nil
 }

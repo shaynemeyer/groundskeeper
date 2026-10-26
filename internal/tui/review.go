@@ -22,24 +22,28 @@ const (
 // keepers; the user accepts a group, changes which photos are kept, or
 // skips it. Protected photos are always kept and every group keeps one.
 type Review struct {
-	groups   []iphone.Group
-	assets   map[string]iphone.Asset
-	keep     []map[string]bool
-	decision []int
-	group    int
-	cursor   int
-	note     string
-	saved    bool
-	viewer   Viewer
-	paths    map[string]string // thumbnail JPEGs by ID
-	photoErr string            // why photos can't be shown
+	groups    []iphone.Group
+	assets    map[string]iphone.Asset
+	keep      []map[string]bool
+	decision  []int
+	group     int
+	cursor    int
+	note      string
+	saved     bool
+	viewer    Viewer
+	paths     map[string]string // thumbnail JPEGs by ID
+	photoErr  string            // why photos can't be shown
+	images    map[string]int    // Kitty image IDs by photo ID, once sent
+	lastImage int
+	width     int
+	quitting  bool
 }
 
 // NewReview starts a review of groups, whose photos are in assets, shown
 // through viewer.
 func NewReview(groups []iphone.Group, assets []iphone.Asset, viewer Viewer) Review {
 	r := Review{groups: groups, assets: map[string]iphone.Asset{}, decision: make([]int, len(groups)),
-		viewer: viewer, paths: map[string]string{}}
+		viewer: viewer, paths: map[string]string{}, images: map[string]int{}}
 	for _, a := range assets {
 		r.assets[a.ID] = a
 	}
@@ -84,6 +88,16 @@ func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			r.photoErr = "Photos can't be shown: " + msg.err.Error()
 		}
+		return r, r.send(msg.paths)
+	case imageMsg:
+		if msg.err != nil {
+			r.photoErr = "A photo couldn't be shown here; press space for Quick Look."
+			return r, nil
+		}
+		r.images[msg.photo] = msg.image
+		return r, tea.Raw(msg.seq)
+	case tea.WindowSizeMsg:
+		r.width = msg.Width
 		return r, nil
 	case previewMsg:
 		if msg.err != nil {
@@ -114,9 +128,10 @@ func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.move(max(r.group-1, 0))
 		return r, r.fetch()
 	case "q":
-		r.saved = true
+		r.saved, r.quitting = true, true
 		return r, tea.Quit
 	case "ctrl+c":
+		r.quitting = true
 		return r, tea.Quit
 	}
 	return r, nil
@@ -143,7 +158,7 @@ func (r *Review) toggle(id string) {
 func (r Review) decide(d int) (tea.Model, tea.Cmd) {
 	r.decision[r.group] = d
 	if r.group == len(r.groups)-1 {
-		r.saved = true
+		r.saved, r.quitting = true, true
 		return r, tea.Quit
 	}
 	r.move(r.group + 1)
@@ -166,6 +181,7 @@ func (r Review) View() tea.View {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Group %d of %d, %s%s\n\n", r.group+1, len(r.groups), kind, decisionNote(r.decision[r.group]))
+	b.WriteString(r.imageRow())
 	for i, id := range g.IDs {
 		a := r.assets[id]
 		marker, label := "    ", "Extra"
