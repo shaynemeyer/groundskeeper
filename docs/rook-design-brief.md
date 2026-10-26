@@ -1,6 +1,6 @@
 # Rook — Mascot Design Brief
 
-Rook is the mascot of **Groundskeeper**, Lot86's terminal tool for keeping a Mac's disk (and a connected iPhone) free of clutter. This brief sets out who Rook is, how Rook looks, and how to use Rook consistently across the tool, the README, reports and Lot86 Media videos.
+Rook is the mascot of **Groundskeeper**, a terminal tool for keeping a Mac's disk (and a connected iPhone) free of clutter. This brief sets out who Rook is, how Rook looks, and how to use Rook consistently across the tool, the README, reports and videos.
 
 ## Character
 
@@ -13,7 +13,7 @@ Rook is the mascot of **Groundskeeper**, Lot86's terminal tool for keeping a Mac
 - **Friendly and a little proud of the work:** pleased by a tidy lot, never preachy about a messy one.
 - **Unflappable:** a full disk is a job to do, not an emergency.
 
-**Family:** Rook is the Lot86 sibling of Rafferty's otter. They share a flat, friendly style and a thick charcoal outline, so they look like they belong to the same studio.
+**Family:** Rook is a sibling of Rafferty's otter. They share a flat, friendly style and a thick charcoal outline, so they look like they belong to the same studio.
 
 ## Visual design
 
@@ -181,4 +181,4 @@ Rook's voice appears in notifications, the terminal UI and the report. It's warm
 - A dark-mode report header variant
 - The `groundskeeper` wordmark lockup (Rook plus wordmark, horizontal and stacked)
 - A macOS `.icns` app icon from `rook-face.svg`, for the notification icon
-- A YouTube channel banner and thumbnail template for Lot86 Media
+- A YouTube channel banner and thumbnail template

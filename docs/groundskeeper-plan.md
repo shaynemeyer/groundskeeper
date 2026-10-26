@@ -1,6 +1,6 @@
 # Groundskeeper — Implementation Plan
 
-**Groundskeeper** is a Lot86 terminal tool for keeping a Mac's disk free of clutter. The command is `groundskeeper`, with a short alias `gk`.
+**Groundskeeper** is a terminal tool for keeping a Mac's disk free of clutter. The command is `groundskeeper`, with a short alias `gk`.
 
 It runs twice a week on macOS and generates an HTML report of disk space that can be reclaimed: caches, AI models, stale build artifacts, toolchains, and old downloads. With an iPhone plugged in over USB, it also reports and cleans up the phone's apps, shared files and duplicate photos. This replaces the separate iPhone app idea.
 

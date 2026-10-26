@@ -6,7 +6,7 @@
 
 > **Status:** early development. `scan` covers every Mac scanner in the plan, `make install` schedules it for Monday and Thursday mornings with a notification, `clean browsers` moves browser caches to the Trash, and `gk doctor` checks the setup. iPhone mode comes next. See the [implementation plan](docs/groundskeeper-plan.md) for what's next.
 
-Groundskeeper (`groundskeeper`, alias `gk`) is a Lot86 terminal tool for macOS. Twice a week it scans for space you can reclaim and writes an HTML report. It looks for:
+Groundskeeper (`groundskeeper`, alias `gk`) is a terminal tool for macOS. Twice a week it scans for space you can reclaim and writes an HTML report. It looks for:
 
 - caches
 - AI models (Ollama, Hugging Face, LM Studio)
