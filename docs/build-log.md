@@ -9,6 +9,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Increment 1:** `internal/iphone/photos.go` runs `photos-helper` (`Helper{Path, Source, Run}`) and decodes `list` into `[]Asset` and `analyze` into `[]Analysis` plus `[]Failure`. An `{"error": kind}` answer becomes `ErrNoDevice`, `ErrLocked`, `ErrDenied` or `ErrTimeout`; a helper that dies without one is `ErrHelper`. `Distance` is Vision's feature-print distance, the squared Euclidean distance of the float32 vectors (step 10).
 - **Increment 2:** `photos-helper hash --source <source>` reads asset IDs on stdin and writes `{"source","hashes":[{id, sha256}],"failed":[{id, reason}]}`, with the new reason `read`. The device path reads each file in 4 MB chunks with `ICCameraFile.requestReadData(atOffset:length:)`; the library path streams the original `PHAssetResource` (the one `list` counts as `bytes`, now shared as `originalResource`) through `PHAssetResourceManager.requestData` with network access off. `Helper.Hash` is the Go side.
 - **Increment 3:** `NearDuplicates` (`internal/iphone/group.go`) sorts photos by date, compares every pair taken within the window and every pair in the same burst, and joins pairs at most `NearDistance` (0.025) apart with a union-find, so links chain. Groups hold two or more IDs, oldest first. Photos without an analysis are left out, and photos without a date are only compared within their burst.
+- **Increment 4:** `ExactCandidates` (`internal/iphone/exact.go`) returns the assets that share their size and dimensions with another, the only ones worth hashing. `ExactDuplicates` groups assets whose size, dimensions and SHA-256 all match, oldest first; assets without a hash or a size are left out.
 
 ### Decisions
 
@@ -16,6 +17,9 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **`requestReadData`, not `requestDownload`.** Both are in the ImageCaptureCore headers (macOS 10.15+); `requestDownload` writes the photo to a file on the Mac that would then have to be deleted, while `requestReadData` hands back bytes that go straight into SHA-256.
 - **Library hashing never goes to iCloud,** keeping the no-network rule. An original that isn't on the Mac fails with `read`, and Go leaves it out of exact-duplicate groups.
 - **`NearDistance` is 0.025, calibrated on the phone.** `analyze` on all 1,158 photos gave 1,799 pairs within 10 minutes or one burst, with distances spread evenly from 0 to past 1.5 and no natural gap. The user judged 39 pairs from thumbnails shown side by side in shuffled order without distances: 14 sampled across 0 to 0.8, the 10 closest on the phone, and all 15 between 0.02 and 0.048. Every pair at 0.0226 or less (12) was a duplicate; between 0.026 and 0.048 answers were mixed (5 duplicates, 9 not), unordered by distance; nothing above 0.048 was. 0.025 groups none of the non-duplicates and misses 5 of 17 duplicates; 0.048 would catch all 17 but group 6 of 12 non-duplicates. Precision won, because each group's extra photos are marked for deletion and device deletes are permanent.
+- **Only same-shape assets are hashed.** On the device path `hash` reads each file in full over USB (about 32 MB/s), and a byte-identical copy always has the same size and dimensions. No two of the phone's 1,158 files share a size, so on this phone nothing is hashed at all.
+- **The hash alone never groups.** A matching SHA-256 with a different size can only be a stale or wrong answer, so size and dimensions are part of the grouping key.
+- **A missing size never matches.** PhotoKit's size key is undocumented and gives 0 when missing; without the guard, every asset missing it would be hashed and could group.
 - **It's a constant, not a config option.** One calibration on one phone doesn't say which way another user would move it.
 - **The helper's stdout is decoded even when it exits 1,** because that's where its error kind is. Its stderr is never read.
 
@@ -26,6 +30,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - `group_test.go` covers the window, bursts, chaining, and skipping unanalyzed and undated photos. Removing the burst linking fails `TestNearDuplicatesBurst`, and dropping the window limit fails `TestNearDuplicatesWindow`.
 - `NearDuplicates` on the phone's real `list` and `analyze` output (from a temporary test, not committed) gave 12 groups of 2, exactly the 12 pairs at 0.025 or less, all of which the user had judged duplicates.
 - With the phone unplugged, `list --source device` answered `{"error":"no-device"}` with exit 1, which closes that part of step 10's open item.
+- `exact_test.go` covers matching, same shape with different contents, a failed hash, missing sizes, and a shared hash with different sizes. Removing the zero-size guard fails `TestExactCandidates`; grouping by hash alone fails `TestExactDuplicatesNeedsSameShape`.
+- In the Mac library the user imported a screenshot twice. `list` gave 6 assets; the same-shape filter picked the 2 copies, `hash` gave both the same SHA-256 with no failures, and the Go `ExactCandidates` and `ExactDuplicates`, run on the saved output from a temporary test, picked the same 2 and returned one group of exactly those two.
 
 ### Problems found
 
@@ -38,6 +44,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - An edited library photo's render is reported, as PhotoKit's `fullSizePhoto` resource (12,467 bytes on the edited screenshot), so it's counted in `sidecarBytes`. This answers step 10's open question.
 - Vision's ranking doesn't always match the user's eye: of the first 14 pairs, the user found the one at 0.075 more alike than the one at 0.048.
 - Every pair the user called a duplicate was taken within 2 seconds, and every pair 12 s or more apart wasn't. A time rule might separate the mixed 0.026 to 0.048 range, but that's 39 pairs on one phone, so the 10-minute window stays.
+- An exact pair taken at the same moment would also be a near-duplicate group. The review has to merge or de-duplicate the two kinds of group.
+- Exact duplicates on the phone itself weren't tested, since it has none. Whether Photos' Duplicate command on the phone makes a byte-identical copy isn't known.
 - Video poster frames are grouped like photos; none of the 12 groups mixed a video with a photo, but nothing prevents it.
 - Over AFC the camera roll's folders are `100APPLE` to `122APPLE`, while ImageCaptureCore names them `YYYYMM_a`, so AFC paths and helper IDs share only the file name.
 
