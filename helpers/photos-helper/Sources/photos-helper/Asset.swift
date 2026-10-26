@@ -1,6 +1,8 @@
 import Foundation
 import ImageCaptureCore
+import ImageIO
 import Photos
+import UniformTypeIdentifiers
 
 /// One photo or video. Holds only IDs, dates, dimensions and sizes: never GPS
 /// data or file contents.
@@ -13,6 +15,9 @@ struct Asset: Encodable {
     /// Size of the Live Photo video and edit files that go with this one.
     let sidecarBytes: Int64
     let burst: String?
+    let video: Bool
+    /// A screenshot taken on the phone, as Photos' Screenshots album counts it.
+    let screenshot: Bool
     /// Favorite, edited and album status come only from the Mac library: they
     /// aren't visible over USB, so they're left out on the device path.
     let favorite: Bool?
@@ -21,7 +26,7 @@ struct Asset: Encodable {
 
     /// A file from the phone. A photo with its edited render is marked edited,
     /// and the render's size is counted in sidecarBytes.
-    init(_ file: ICCameraFile, render: ICCameraFile? = nil) {
+    init(_ file: ICCameraFile, render: ICCameraFile? = nil, screenshot: Bool = false) {
         id = file.assetID
         created = file.creationDate
         width = file.width
@@ -30,6 +35,8 @@ struct Asset: Encodable {
         sidecarBytes = (file.sidecarFiles ?? []).compactMap { $0 as? ICCameraFile }.reduce(0) { $0 + $1.fileSize }
             + (render?.fileSize ?? 0)
         burst = file.burstUUID
+        video = file.uti == UTType.movie.identifier
+        self.screenshot = screenshot
         favorite = nil
         edited = render == nil ? nil : true
         inAlbum = nil
@@ -47,6 +54,8 @@ struct Asset: Encodable {
         bytes = original?.bytes ?? 0
         sidecarBytes = resources.filter { $0 !== original }.reduce(0) { $0 + $1.bytes }
         burst = asset.burstIdentifier
+        video = asset.mediaType == .video
+        screenshot = asset.mediaSubtypes.contains(.photoScreenshot)
         favorite = asset.isFavorite
         edited = asset.hasAdjustments
         self.inAlbum = inAlbum
@@ -64,7 +73,8 @@ func originalResource(in resources: [PHAssetResource]) -> PHAssetResource? {
 /// render as a file of its own, such as IMG_E0001.JPG next to IMG_0001.HEIC.
 /// A render with exactly one original in the same folder, taken at the same
 /// moment, is folded into that original; any other file stays an asset.
-func deviceAssets(_ files: [ICCameraFile]) -> [Asset] {
+@MainActor
+func deviceAssets(_ files: [ICCameraFile]) async -> [Asset] {
     let byKey = Dictionary(grouping: files) { $0.photoKey }
     var renders: [ObjectIdentifier: ICCameraFile] = [:]
     for file in files {
@@ -73,9 +83,11 @@ func deviceAssets(_ files: [ICCameraFile]) -> [Asset] {
         }
     }
     let folded = Set(renders.values.map(ObjectIdentifier.init))
-    return files.filter { !folded.contains(ObjectIdentifier($0)) }.map {
-        Asset($0, render: renders[ObjectIdentifier($0)])
+    var assets: [Asset] = []
+    for file in files where !folded.contains(ObjectIdentifier(file)) {
+        assets.append(Asset(file, render: renders[ObjectIdentifier(file)], screenshot: await file.isScreenshot()))
     }
+    return assets
 }
 
 extension ICCameraFile {
@@ -96,6 +108,20 @@ extension ICCameraFile {
     var originalKey: String? {
         guard let name, name.hasPrefix("IMG_E") else { return nil }
         return key(stem: "IMG_" + (String(name.dropFirst(5)) as NSString).deletingPathExtension)
+    }
+
+    /// Whether iOS marked this image a screenshot in its EXIF UserComment.
+    /// Only the metadata is requested, never the image. The block is @Sendable
+    /// because ImageCaptureCore calls it on any queue.
+    @MainActor
+    func isScreenshot() async -> Bool {
+        guard uti == UTType.image.identifier else { return false }
+        return await withCheckedContinuation { done in
+            requestMetadataDictionary(options: nil) { @Sendable metadata, _ in
+                let exif = metadata?[kCGImagePropertyExifDictionary as String] as? [AnyHashable: Any]
+                done.resume(returning: exif?[kCGImagePropertyExifUserComment as String] as? String == "Screenshot")
+            }
+        }
     }
 
     private func key(stem: String) -> String? {
