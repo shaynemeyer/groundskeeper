@@ -4,7 +4,7 @@
 
 <p align="center">Keep your Mac's disk, and a connected iPhone, free of clutter.</p>
 
-> **Status:** planning. No code yet. See the [implementation plan](docs/groundskeeper-plan.md).
+> **Status:** early development. `scan` reports caches today. See the [implementation plan](docs/groundskeeper-plan.md) for what's next.
 
 Groundskeeper (`groundskeeper`, alias `gk`) is a Lot86 terminal tool for macOS. Twice a week it scans for space you can reclaim and writes an HTML report. It looks for:
 
@@ -27,17 +27,18 @@ With an iPhone plugged in over USB, it also reports on the phone's apps, shared 
 
 ## Commands (planned)
 
-| Group | Commands |
-|---|---|
-| Report (read-only) | `scan` (default), `iphone`, `history`, `stats`, `logs` |
-| Review | `review photos` |
-| Clean (dry run unless `--apply`) | `clean browsers`, `clean iphone-apps`, `clean photos` |
-| Setup | `setup photos`, `config`, `doctor` |
+| Group                            | Commands                                               |
+| -------------------------------- | ------------------------------------------------------ |
+| Report (read-only)               | `scan` (default), `iphone`, `history`, `stats`, `logs` |
+| Review                           | `review photos`                                        |
+| Clean (dry run unless `--apply`) | `clean browsers`, `clean iphone-apps`, `clean photos`  |
+| Setup                            | `setup photos`, `config`, `doctor`                     |
 
 ```sh
-make build     # Go binary + Swift photos-helper
-make test      # go test ./... and govulncheck
-make install   # ~/bin/groundskeeper, gk alias, zsh completion, launchd job
+make build                        # bin/groundskeeper
+make test                         # go test ./... and govulncheck
+make run                          # scan and open the report
+./bin/groundskeeper scan --dry    # summary only, writes nothing
 ```
 
 ## Docs

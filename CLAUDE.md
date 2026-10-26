@@ -4,23 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Groundskeeper is in the planning stage: there is no code yet. The source of truth is `docs/groundskeeper-plan.md`. Read it before starting any work, follow its **Build order** section step by step, and update the plan if a decision changes.
+Build step 1 of `docs/groundskeeper-plan.md` is done: CLI skeleton, logging, size engine, Caches scanner and HTML report. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
 
 Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that scans the Mac (and an iPhone connected over USB) for disk space that can be reclaimed and writes an HTML report. launchd runs it on a schedule twice a week.
 
-## Planned commands
+## Commands
 
-These are the Makefile targets the plan describes. None of them exist until build step 1 and step 7 are done.
+- `make build`: builds `bin/groundskeeper` with the git version stamped in
+- `make test`: `go test ./...`, then `govulncheck` (pinned in the Makefile). Run a single test with `go test ./internal/scan -run TestName`
+- `make run`: builds, scans and opens the report
+- `./bin/groundskeeper scan --dry`: scan this Mac without writing the report or log
+- `go test -race ./...`: the size engine and scanners are concurrent
 
-- `make build`: `go build -o bin/groundskeeper ./cmd/groundskeeper`, plus `swift build -c release` for `helpers/photos-helper`
-- `make test`: `go test ./...`, then `govulncheck ./...`. Run a single test with `go test ./internal/scan -run TestName`
-- `make run`: one scan that opens the report afterwards
-- `make install` / `make uninstall`: install the binary to `~/bin`, the `gk` symlink, zsh completion and the LaunchAgent
-- `make install-tunnel`: the go-ios tunnel as a LaunchDaemon (needs sudo, iOS 17 and later)
+Still to come: `make install`, `make uninstall` (step 7), `make install-tunnel` (step 9), and `swift build` for `photos-helper` (step 10).
+
+Go is pinned to the latest patch release in `go.mod` (`go 1.27.3`). `GOTOOLCHAIN=auto` downloads it if needed. When `govulncheck` reports a vulnerability, upgrade the Go patch release or the module it names rather than suppressing it.
 
 ## Architecture (as planned)
 
-- **Scanners** (`internal/scan/`, `internal/iphone/`) each implement `Scanner { Name(); Scan(ctx, home) ([]Item, error) }` and return `Item`s that carry a section, path, size in bytes, safety tag (`safe` | `review` | `keep`), and a cleanup **hint**. Hints are only displayed. They are never executed.
+- **Scanners** (`internal/scan/`, `internal/iphone/`) each implement `Scanner { Name(); Scan(ctx, home) (Findings, error) }`. `Findings` holds the skipped paths and `Item`s that carry a section, path, size in bytes, safety tag (`safe` | `review` | `keep`), and a cleanup **hint**. Hints are only displayed. They are never executed.
 - **Size engine** (`internal/size/`): a worker pool with a timeout per folder. It counts allocated blocks (`Blocks * 512`), not apparent size, skips symlinks, and counts each hardlink once by device and inode. Paths it can't read are recorded as "skipped". They are not treated as errors.
 - **Aggregation**: scanner results are combined with the previous snapshot (`internal/history/`, stored in `~/.local/state/groundskeeper/`) to work out deltas. The results then go to the HTML report (`internal/report/`, template embedded with `go:embed`), a snapshot JSON file, and a macOS notification.
 - **CLI** (`internal/cli/`, one file per command): Cobra wrapped in Charm's Fang, with Lip Gloss for styling and Bubble Tea for spinners and the photo review screen. Commands are grouped in the help output as Report, Review, Clean and Setup. Running `groundskeeper` with no subcommand runs `scan`. Every command's help has a summary, a description, a safety note, examples, flags and a See also list. CLI tests enforce this.

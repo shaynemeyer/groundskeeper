@@ -41,7 +41,12 @@ Each scanner implements a small interface:
 ```go
 type Scanner interface {
     Name() string
-    Scan(ctx context.Context, home string) ([]Item, error)
+    Scan(ctx context.Context, home string) (Findings, error)
+}
+
+type Findings struct {
+    Items   []Item
+    Skipped []size.Skip // unreadable or timed-out paths, for the Skipped paths section
 }
 
 type Item struct {
@@ -620,7 +625,7 @@ groundskeeper/
 1. **CLI skeleton, logging, size engine, Caches scanner and HTML report.** The root command, `scan`, Fang help, the `ui` styles and `slog` logging come first, so every later command follows the same help, output and logging pattern. This gives a minimal report that works end to end.
 2. **Build-artifact scanner** with git-based staleness and broken-venv detection.
 3. **Models and toolchains scanners**, including Ollama manifest parsing and Hugging Face repos.
-4. **Containers, Downloads, Browsers and Unused apps scanners.**
+4. **Containers, Downloads, Browsers and Unused apps scanners.** The Browsers scanner takes over the browser folders in `~/Library/Caches` (such as `Google`, `Firefox` and `com.duckduckgo.macos.browser`), and the Caches scanner skips them so they aren't counted twice.
 5. **Opt-in `clean browsers` command**, with tests confirming it can never touch paths outside the allowlist (including through symlinks and `..`) and refuses while the browser is running.
 6. **History and deltas**, plus the "growing fastest" section. Metrics are added to snapshots here, along with the report's Run details section and the `stats` and `logs` commands.
 7. **launchd setup and notification**, with the Makefile `install` and `uninstall` targets, plus `doctor`, the help topics and zsh completion. At this point the Mac side is complete.
