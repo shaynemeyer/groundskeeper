@@ -360,7 +360,7 @@ The CLI should be pleasant to use and explain itself. Every command has a one-li
 | [Cobra](https://github.com/spf13/cobra) | Subcommands, flags, help topics, shell completions | [cobra.dev](https://cobra.dev/) |
 | [Fang](https://github.com/charmbracelet/fang) | Wraps Cobra: styled help and usage, styled errors, `--version`, man page and completion commands | [README](https://github.com/charmbracelet/fang#readme) |
 | [Lip Gloss](https://github.com/charmbracelet/lipgloss) | Colors, tables and boxes in normal command output | [pkg.go.dev](https://pkg.go.dev/github.com/charmbracelet/lipgloss) |
-| [Bubble Tea](https://github.com/charmbracelet/bubbletea) / [Bubbles](https://github.com/charmbracelet/bubbles) | Already used for review screens; also the scan spinner and progress bar | [pkg.go.dev](https://pkg.go.dev/github.com/charmbracelet/bubbletea) |
+| [Bubble Tea](https://github.com/charmbracelet/bubbletea) / [Bubbles](https://github.com/charmbracelet/bubbles) | Review screens (the scan spinner is a plain ticker, see Output) | [pkg.go.dev](https://pkg.go.dev/github.com/charmbracelet/bubbletea) |
 
 Pin the latest stable versions at build time and check each library's release notes, since the Charm libraries have been moving to v2 APIs.
 
@@ -425,10 +425,10 @@ Help text lives next to each command so it stays in sync with the code.
 - **Sizes** are human-readable (`12.4 GB`) and right-aligned in tables.
 - **Safety tags** use consistent colors everywhere: safe in green, review in yellow, keep in gray. The same words appear in the HTML report.
 - **Changes** since the last run show as `+2.1 GB` or `-800 MB`, in red when the item grew.
-- **Scans** show a spinner with the current scanner name, then a summary box: free space, reclaimable estimate, change since last run, and the report path.
+- **Scans** show a spinner with the current step ("Reading iPhone", "Scanning Caches", "Writing report"), then a summary box: free space, reclaimable estimate, change since last run, and the report path.
 - **Dry runs** end with a clear line such as `Dry run: nothing was changed. Add --apply to move 4.2 GB to the Trash.`
 - **Errors** say what went wrong and what to try next, for example `iPhone is locked. Unlock it and run gk iphone again.`
-- **Plain output when it should be:** when stdout isn't a terminal (launchd, pipes) or `NO_COLOR` is set, there are no colors, spinners or boxes. Lip Gloss detects the terminal's color support on its own; the scan only shows a spinner when stdout is a TTY. See [no-color.org](https://no-color.org/).
+- **Plain output when it should be:** when stdout isn't a terminal (launchd, pipes) or `NO_COLOR` is set, there are no colors, spinners or boxes. Lip Gloss detects the terminal's color support on its own; the scan only shows a spinner when stdout and stderr are both TTYs, and not with `--verbose`, whose log lines also go to stderr. The spinner is a small ticker in `internal/ui` that redraws one stderr line, not a Bubble Tea program: Bubble Tea would put the terminal in raw mode and take over Ctrl-C for a single status line. See [no-color.org](https://no-color.org/).
 
 ### Shell completion
 

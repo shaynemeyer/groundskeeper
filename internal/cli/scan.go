@@ -117,9 +117,12 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 
 	start := time.Now()
 	log.Info("run started", logging.Flag("dry_run", opts.dry))
+	spin := startSpinner(cmd, global)
+	defer spin.Stop()
 	var phone *report.Phone
 	var phoneStat metrics.Scanner
 	if opts.iphone {
+		spin.Set("Reading iPhone")
 		if phone, phoneStat, err = readPhone(log, start); err != nil {
 			return err
 		}
@@ -131,7 +134,7 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	}
 	measurer := size.New(folderTimeout, sizeWorkers)
 	rep := report.Report{Generated: start, Disk: disk}
-	rep.Sections, rep.Skipped, rep.Run.Scanners = runScanners(ctx, log, newScanners(home, cfg, measurer), home)
+	rep.Sections, rep.Skipped, rep.Run.Scanners = runScanners(ctx, log, newScanners(home, cfg, measurer), home, spin)
 	if phone != nil {
 		rep.IPhone = phone
 		rep.Run.Scanners = append([]metrics.Scanner{phoneStat}, rep.Run.Scanners...)
@@ -150,6 +153,7 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 		}
 	}
 
+	spin.Set("Writing report")
 	path := ""
 	if !opts.dry {
 		if path, err = report.Write(config.Expand(cfg.OutputDir, home), rep); err != nil {
@@ -158,6 +162,7 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 		log.Info("report written", logging.Path(path))
 	}
 	log.Info("run finished", logging.Duration(time.Since(start)), logging.Bytes(rep.Reclaimable()))
+	spin.Stop()
 	printSummary(cmd.OutOrStdout(), rep, path)
 	if opts.notify && !opts.dry {
 		sendNotification(ctx, log, rep)
@@ -199,11 +204,12 @@ func newScanners(home string, cfg config.Config, measurer *size.Measurer) []scan
 
 // runScanners runs each scanner in turn, logging and timing it. A failed
 // scanner is recorded and the rest still run.
-func runScanners(ctx context.Context, log *logging.Logger, scanners []scan.Scanner, home string) ([]report.Section, []size.Skip, []metrics.Scanner) {
+func runScanners(ctx context.Context, log *logging.Logger, scanners []scan.Scanner, home string, spin *ui.Spinner) ([]report.Section, []size.Skip, []metrics.Scanner) {
 	var sections []report.Section
 	var skipped []size.Skip
 	var stats []metrics.Scanner
 	for _, s := range scanners {
+		spin.Set("Scanning " + s.Name())
 		begin := time.Now()
 		f, err := s.Scan(ctx, home)
 		m := metrics.Scanner{Name: s.Name(), DurationMS: time.Since(begin).Milliseconds(), Items: len(f.Items), Skipped: len(f.Skipped)}
@@ -378,4 +384,14 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 	for _, it := range items[:min(topItems, len(items))] {
 		fmt.Fprintf(w, "  %10s  %-6s  %s%s\n", ui.Bytes(it.Bytes), ui.Tag(it.Safety, plain), it.Label, changeNote(rep, it, plain))
 	}
+}
+
+// startSpinner shows progress on stderr. It stays silent with --verbose,
+// whose log lines go to stderr too, and when stdout or stderr is plain, so
+// piping the summary into a pager doesn't draw over it.
+func startSpinner(cmd *cobra.Command, global *globalOptions) *ui.Spinner {
+	if global.verbose || ui.Plain(cmd.OutOrStdout()) {
+		return &ui.Spinner{}
+	}
+	return ui.StartSpinner(cmd.ErrOrStderr())
 }
