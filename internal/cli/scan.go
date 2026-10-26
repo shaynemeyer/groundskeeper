@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,8 +93,16 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	}
 	rep := report.Report{Generated: start, Disk: disk}
 	measurer := size.New(folderTimeout, sizeWorkers)
+	minBytes := cfg.MinSizeMB * 1_000_000
 	scanners := []scan.Scanner{
-		scan.Caches{Size: measurer, MinBytes: cfg.MinSizeMB * 1_000_000},
+		scan.Caches{Size: measurer, MinBytes: minBytes},
+		scan.Artifacts{
+			Size:      measurer,
+			Roots:     expandAll(cfg.ProjectRoots, home),
+			Exclude:   expandAll(cfg.ExcludePaths, home),
+			StaleDays: cfg.StaleDays,
+			MinBytes:  minBytes,
+		},
 	}
 	for _, s := range scanners {
 		begin := time.Now()
@@ -126,13 +136,24 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	return nil
 }
 
-func openLog(cmd *cobra.Command, home string, cfg config.Config, global *globalOptions, dry bool) (*logging.Logger, io.Closer, error) {
-	if dry {
-		return logging.Discard(), io.NopCloser(nil), nil
+func expandAll(paths []string, home string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = config.Expand(p, home)
 	}
+	return out
+}
+
+func openLog(cmd *cobra.Command, home string, cfg config.Config, global *globalOptions, dry bool) (*logging.Logger, io.Closer, error) {
 	var verbose io.Writer
 	if global.verbose {
 		verbose = cmd.ErrOrStderr()
+	}
+	if dry && verbose != nil {
+		return logging.Text(verbose, cmd.Name()), io.NopCloser(nil), nil
+	}
+	if dry {
+		return logging.Discard(), io.NopCloser(nil), nil
 	}
 	path := filepath.Join(home, "Library", "Logs", "groundskeeper.log")
 	return logging.Open(path, logging.Options{Level: cfg.LogLevel, Cmd: cmd.Name(), Verbose: verbose})
@@ -160,6 +181,7 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 	if len(items) == 0 {
 		return
 	}
+	slices.SortFunc(items, func(a, b scan.Item) int { return cmp.Compare(b.Bytes, a.Bytes) })
 	fmt.Fprintln(w, "\nLargest items:")
 	for _, it := range items[:min(topItems, len(items))] {
 		fmt.Fprintf(w, "  %10s  %-6s  %s\n", ui.Bytes(it.Bytes), ui.Tag(it.Safety, plain), it.Label)

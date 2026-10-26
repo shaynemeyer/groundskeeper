@@ -88,15 +88,20 @@ func (m *Measurer) MeasureAll(ctx context.Context, roots []string) []Result {
 	return results
 }
 
-func (m *Measurer) skip(res *Result, path string, d fs.DirEntry, err error) error {
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+// NewSkip records path as skipped because of err.
+func NewSkip(path string, err error) Skip {
 	reason := "error"
 	if errors.Is(err, fs.ErrPermission) {
 		reason = "permission"
 	}
-	res.Skipped = append(res.Skipped, Skip{Path: path, Reason: reason})
+	return Skip{Path: path, Reason: reason}
+}
+
+func (m *Measurer) skip(res *Result, path string, d fs.DirEntry, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	res.Skipped = append(res.Skipped, NewSkip(path, err))
 	if d != nil && d.IsDir() {
 		return filepath.SkipDir
 	}

@@ -84,6 +84,12 @@ func (l *Logger) log(level slog.Level, msg string, fields []Field) {
 // Discard returns a Logger that writes nothing.
 func Discard() *Logger { return &Logger{slog.New(slog.DiscardHandler)} }
 
+// Text returns a Logger that writes debug lines as plain text to w only.
+func Text(w io.Writer, cmd string) *Logger {
+	h := slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})
+	return &Logger{slog.New(h).With("cmd", cmd)}
+}
+
 // Options configure Open.
 type Options struct {
 	Level    string    // "debug", "info", "warn" or "error"

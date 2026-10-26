@@ -109,6 +109,34 @@ func TestDryWritesNoFiles(t *testing.T) {
 	}
 }
 
+func TestDryVerbosePrintsToStderrOnly(t *testing.T) {
+	home := fakeHome(t)
+	out := run(t, "scan", "--dry", "--verbose")
+
+	if !strings.Contains(out, "scanner done") {
+		t.Errorf("verbose output missing scanner lines: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Library/Logs")); !os.IsNotExist(err) {
+		t.Error("log written during --dry")
+	}
+}
+
+func TestScanFindsBuildArtifacts(t *testing.T) {
+	home := fakeHome(t)
+	nm := filepath.Join(home, "projects/app/node_modules/x")
+	if err := os.MkdirAll(filepath.Dir(nm), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nm, make([]byte, 50_000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := run(t, "scan", "--dry")
+
+	if !strings.Contains(out, "projects/app/node_modules") {
+		t.Errorf("summary missing artifact: %q", out)
+	}
+}
+
 func TestNoContentsOrSecretsInOutput(t *testing.T) {
 	home := fakeHome(t)
 	t.Setenv("GITHUB_TOKEN", marker)

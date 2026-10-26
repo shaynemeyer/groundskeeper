@@ -143,6 +143,8 @@ Walk the configured project roots (default: `~/projects`, `~/github`, `~/code`, 
 
 **Staleness.** Use the date of the last git commit (`git log -1 --format=%ct`) when the project is a git repo. Otherwise use the newest mtime among the project's own files, ignoring artifact folders. Folder mtimes aren't used because a bulk sync or pull resets them all to the same date.
 
+**Projects.** A project is the top-level folder under a project root, so a monorepo's nested `node_modules` folders share the repo's staleness. `git` runs only when that folder has its own `.git`, so a git repo higher up (such as a dotfiles repo in `~`) is never used. It runs with `-c core.fsmonitor=false`, so a cloned repo's config can't make it start a program.
+
 **Broken venvs.** Flag any `.venv` whose `pyvenv.cfg` `home` points at an interpreter that no longer exists. This is useful after removing pyenv, since many venvs were built on pyenv Pythons.
 
 ## iPhone mode
