@@ -272,7 +272,7 @@ flowchart TD
 
 **Detection,** in Go, using the helper's output:
 1. **Exact duplicates:** grouped by size and dimensions, then confirmed with the helper's `hash`.
-2. **Near-duplicates:** photos taken within 10 minutes of each other, or in the same burst, are compared by feature-print distance and linked into groups.
+2. **Near-duplicates:** photos taken within 10 minutes of each other, or in the same burst, are compared by feature-print distance and linked into groups when they're 0.025 or less apart (`NearDistance`, calibrated against the user's judgments in step 11).
 3. **Best shot to keep:** aesthetic score, sharpness and face quality. Favorites, edited photos and photos in albums are always kept.
 4. **Other categories:** screenshots older than 30 days and the largest videos.
 

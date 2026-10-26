@@ -8,18 +8,24 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 
 - **Increment 1:** `internal/iphone/photos.go` runs `photos-helper` (`Helper{Path, Source, Run}`) and decodes `list` into `[]Asset` and `analyze` into `[]Analysis` plus `[]Failure`. An `{"error": kind}` answer becomes `ErrNoDevice`, `ErrLocked`, `ErrDenied` or `ErrTimeout`; a helper that dies without one is `ErrHelper`. `Distance` is Vision's feature-print distance, the squared Euclidean distance of the float32 vectors (step 10).
 - **Increment 2:** `photos-helper hash --source <source>` reads asset IDs on stdin and writes `{"source","hashes":[{id, sha256}],"failed":[{id, reason}]}`, with the new reason `read`. The device path reads each file in 4 MB chunks with `ICCameraFile.requestReadData(atOffset:length:)`; the library path streams the original `PHAssetResource` (the one `list` counts as `bytes`, now shared as `originalResource`) through `PHAssetResourceManager.requestData` with network access off. `Helper.Hash` is the Go side.
+- **Increment 3:** `NearDuplicates` (`internal/iphone/group.go`) sorts photos by date, compares every pair taken within the window and every pair in the same burst, and joins pairs at most `NearDistance` (0.025) apart with a union-find, so links chain. Groups hold two or more IDs, oldest first. Photos without an analysis are left out, and photos without a date are only compared within their burst.
 
 ### Decisions
 
 - **A `hash` command instead of dropping SHA-256.** The plan confirms exact duplicates with SHA-256, and no helper command read the original files. The user chose adding `hash` over treating a zero feature-print distance as exact.
 - **`requestReadData`, not `requestDownload`.** Both are in the ImageCaptureCore headers (macOS 10.15+); `requestDownload` writes the photo to a file on the Mac that would then have to be deleted, while `requestReadData` hands back bytes that go straight into SHA-256.
 - **Library hashing never goes to iCloud,** keeping the no-network rule. An original that isn't on the Mac fails with `read`, and Go leaves it out of exact-duplicate groups.
+- **`NearDistance` is 0.025, calibrated on the phone.** `analyze` on all 1,158 photos gave 1,799 pairs within 10 minutes or one burst, with distances spread evenly from 0 to past 1.5 and no natural gap. The user judged 39 pairs from thumbnails shown side by side in shuffled order without distances: 14 sampled across 0 to 0.8, the 10 closest on the phone, and all 15 between 0.02 and 0.048. Every pair at 0.0226 or less (12) was a duplicate; between 0.026 and 0.048 answers were mixed (5 duplicates, 9 not), unordered by distance; nothing above 0.048 was. 0.025 groups none of the non-duplicates and misses 5 of 17 duplicates; 0.048 would catch all 17 but group 6 of 12 non-duplicates. Precision won, because each group's extra photos are marked for deletion and device deletes are permanent.
+- **It's a constant, not a config option.** One calibration on one phone doesn't say which way another user would move it.
 - **The helper's stdout is decoded even when it exits 1,** because that's where its error kind is. Its stderr is never read.
 
 ### Verified
 
 - `photos_test.go` replays hand-written helper JSON in `testdata/helper/` (device and library `list`, `analyze`, a `locked` error) and checks the arguments and stdin sent. Mapping `locked` to the wrong kind fails `TestHelperErrorKind`. The fixture guard passes over the new files.
 - `hash --source device` on the phone, for the 3 smallest files (PNG screenshots) and the largest (a 643 MB video): every hash equalled the SHA-256 of the same file read separately over go-ios AFC (`/DCIM/NNNAPPLE/<name>`, read-only) from a scratch program outside the repo, byte counts equal to `list`'s `bytes`. The video crosses 154 chunk boundaries. It took 20 s in all, about 32 MB/s. A made-up ID gave `not-found`; a missing `--source`, an extra `--out` and non-JSON stdin each exit 2. `TestHash` covers the Go side.
+- `group_test.go` covers the window, bursts, chaining, and skipping unanalyzed and undated photos. Removing the burst linking fails `TestNearDuplicatesBurst`, and dropping the window limit fails `TestNearDuplicatesWindow`.
+- `NearDuplicates` on the phone's real `list` and `analyze` output (from a temporary test, not committed) gave 12 groups of 2, exactly the 12 pairs at 0.025 or less, all of which the user had judged duplicates.
+- With the phone unplugged, `list --source device` answered `{"error":"no-device"}` with exit 1, which closes that part of step 10's open item.
 
 ### Problems found
 
@@ -30,6 +36,9 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Decoding hasn't been run against the real helper's output yet; that comes when `gk iphone` runs it.
 - `hash --source mac-library` ran from a terminal app with Photos access and hashed the 3 oldest library photos (two JPEGs and an edited PNG screenshot) with no failures; from the agent's terminal it answers `denied`. Each hash equalled `shasum -a 256` of the photo's file in the library's `originals` folder (named by the ID's UUID), and each file's size equalled `list`'s `bytes`. The edited screenshot hashed its unedited original, as intended.
 - An edited library photo's render is reported, as PhotoKit's `fullSizePhoto` resource (12,467 bytes on the edited screenshot), so it's counted in `sidecarBytes`. This answers step 10's open question.
+- Vision's ranking doesn't always match the user's eye: of the first 14 pairs, the user found the one at 0.075 more alike than the one at 0.048.
+- Every pair the user called a duplicate was taken within 2 seconds, and every pair 12 s or more apart wasn't. A time rule might separate the mixed 0.026 to 0.048 range, but that's 39 pairs on one phone, so the 10-minute window stays.
+- Video poster frames are grouped like photos; none of the 12 groups mixed a video with a photo, but nothing prevents it.
 - Over AFC the camera roll's folders are `100APPLE` to `122APPLE`, while ImageCaptureCore names them `YYYYMM_a`, so AFC paths and helper IDs share only the file name.
 
 ## Step 10: photos-helper
