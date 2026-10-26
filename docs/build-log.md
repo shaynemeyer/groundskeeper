@@ -2,6 +2,13 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Between steps 6 and 7: on-demand install
+
+- `make install` builds and copies the binary to `~/bin`, adds the `gk` symlink, and writes zsh completion for both names to `~/.zsh/completions/_groundskeeper` (the `#compdef` and `compdef` lines are rewritten to include `gk`). `make uninstall` removes exactly those three files. The LaunchAgent comes in step 7.
+- Shell setup, outside the repo: `~/bin` was not on `PATH`, so it was added, and the completions folder joined `fpath` before oh-my-zsh runs `compinit`.
+- **Problem found:** `gk` ran `gitk`. Root cause: oh-my-zsh's `git` plugin defines `alias gk='\gitk --all --branches &!'`, and aliases win over `PATH`. gitk isn't installed, so the alias did nothing useful. It is removed with `unalias gk` after oh-my-zsh loads. Anyone else using oh-my-zsh's `git` plugin will hit the same conflict.
+- **Verified:** in a fresh interactive shell, `type gk` resolves to `~/bin/gk`, and `gk --version` and `gk stats` work from any folder.
+
 ## Step 6: History, deltas and metrics
 
 ### Built

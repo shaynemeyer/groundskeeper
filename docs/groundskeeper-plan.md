@@ -635,7 +635,7 @@ groundskeeper/
 | Target | Does |
 |---|---|
 | `build` | `go build -o bin/groundskeeper ./cmd/groundskeeper`, plus `swift build -c release` for `photos-helper` |
-| `install` | Copies the binary to `~/bin`, adds a `gk` symlink, installs zsh completion, fills `$HOME` into the plist, copies the plist to `~/Library/LaunchAgents`, and runs `launchctl bootstrap gui/$(id -u)` |
+| `install` | Copies the binary to `~/bin`, adds a `gk` symlink, installs zsh completion for both names in `~/.zsh/completions` (already done; the next part is step 7), fills `$HOME` into the plist, copies the plist to `~/Library/LaunchAgents`, and runs `launchctl bootstrap gui/$(id -u)` |
 | `install-tunnel` | Installs the go-ios tunnel as a LaunchDaemon (needs `sudo`), for iOS 17 and later |
 | `uninstall` | Runs `launchctl bootout`, then removes the plist, binaries and tunnel daemon |
 | `run` | Runs once now with `-open` |

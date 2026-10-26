@@ -38,6 +38,7 @@ With an iPhone plugged in over USB, it also reports on the phone's apps, shared 
 make build                        # bin/groundskeeper
 make test                         # go test ./... and govulncheck
 make run                          # scan and open the report
+make install                      # ~/bin/groundskeeper, gk, zsh completion
 ./bin/groundskeeper scan --dry    # summary only, writes nothing
 ```
 

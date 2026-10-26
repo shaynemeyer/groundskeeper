@@ -15,10 +15,11 @@ Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that 
 - `make build`: builds `bin/groundskeeper` with the git version stamped in
 - `make test`: `go test ./...`, then `govulncheck` (pinned in the Makefile). Run a single test with `go test ./internal/scan -run TestName`
 - `make run`: builds, scans and opens the report
+- `make install` / `make uninstall`: the binary in `~/bin`, the `gk` symlink, and zsh completion for both names in `~/.zsh/completions` (step 7 adds the LaunchAgent). Reinstall after changes to use them as `gk`
 - `./bin/groundskeeper scan --dry`: scan this Mac without writing the report or log
 - `go test -race ./...`: the size engine and scanners are concurrent
 
-Still to come: `make install`, `make uninstall` (step 7), `make install-tunnel` (step 9), and `swift build` for `photos-helper` (step 10).
+Still to come: the LaunchAgent in `make install` (step 7), `make install-tunnel` (step 9), and `swift build` for `photos-helper` (step 10).
 
 Go is pinned to the latest patch release in `go.mod` (`go 1.27.3`). `GOTOOLCHAIN=auto` downloads it if needed. When `govulncheck` reports a vulnerability, upgrade the Go patch release or the module it names rather than suppressing it.
 
