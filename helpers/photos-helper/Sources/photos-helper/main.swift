@@ -93,7 +93,7 @@ let catalog = DeviceCatalog { result in
         return
     }
     switch command {
-    case .list: emit(Listing(source: "device", assets: files.map(Asset.init)))
+    case .list: emit(Listing(source: "device", assets: deviceAssets(files)))
     case .analyze: Task { emit(await analyze(ids, in: files)) }
     case .thumbnail: Task { emit(await writeThumbnails(ids, in: files, to: out!)) }
     case .hash: Task { emit(await hash(ids, in: files)) }

@@ -11,6 +11,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Increment 3:** `NearDuplicates` (`internal/iphone/group.go`) sorts photos by date, compares every pair taken within the window and every pair in the same burst, and joins pairs at most `NearDistance` (0.025) apart with a union-find, so links chain. Groups hold two or more IDs, oldest first. Photos without an analysis are left out, and photos without a date are only compared within their burst.
 - **Increment 4:** `ExactCandidates` (`internal/iphone/exact.go`) returns the assets that share their size and dimensions with another, the only ones worth hashing. `ExactDuplicates` groups assets whose size, dimensions and SHA-256 all match, oldest first; assets without a hash or a size are left out.
 - **Increment 5:** `Keep` (`internal/iphone/best.go`) returns a group's keepers: every protected asset (`Asset.Protected`: favorite, edited or in an album) plus the best shot, the highest aesthetics score. With protected assets in the group the best shot is chosen among them. A missing score ranks lowest, and ties go to the older photo.
+- **Increment 6 (in progress), old screenshots and the largest videos.** First, device `list` folds each edited render (`IMG_E0001.JPG`) into its original (`IMG_0001.HEIC`) when exactly one original is in the same folder with the same creation date: the render is no longer an asset, its size goes to the original's `sidecarBytes`, and the original is `edited: true` (`deviceAssets` in `Asset.swift`).
 
 ### Decisions
 
@@ -25,6 +26,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **A favorite isn't kept alongside an extra photo.** When a group holds protected assets, the best shot is picked among them, so a group with one favorite keeps just that favorite. The plan only said protected photos are always kept.
 - **It's a constant, not a config option.** One calibration on one phone doesn't say which way another user would move it.
 - **The helper's stdout is decoded even when it exits 1,** because that's where its error kind is. Its stderr is never read.
+- **Renders fold into their original on the device path,** as the library path already counts `fullSizePhoto` in `sidecarBytes`. Photos shows the pair as one photo (the Screenshots album counts 52, not 54), listing the render separately let an original and its render group together with the original marked for deletion, and the render is the only sign over USB that a photo was edited, which now protects it. The `IMG_E` name is Apple's convention, not an API, so a render is only folded when its original matches on folder, number and date.
+- **Screenshots are told apart by metadata, not by file type or size.** A read-only probe outside the repo found, on the phone, EXIF `UserComment` = `Screenshot` on 52 PNGs (24 at 1260x2736, 28 at 2736x1260) and on the 2 `IMG_E` renders of two of them; no other image had it, including an 800x533 PNG that a PNG rule would have caught. The phone's Screenshots album counts 52. In the Mac library, PhotoKit's `photoScreenshot` subtype was set on exactly the 4 assets in the Screenshots smart album, though the header marks it only for iOS. Videos are `public.movie` by UTI on the phone (19) and `mediaType == .video` in the library.
 
 ### Verified
 
@@ -36,6 +39,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - `exact_test.go` covers matching, same shape with different contents, a failed hash, missing sizes, and a shared hash with different sizes. Removing the zero-size guard fails `TestExactCandidates`; grouping by hash alone fails `TestExactDuplicatesNeedsSameShape`.
 - In the Mac library the user imported a screenshot twice. `list` gave 6 assets; the same-shape filter picked the 2 copies, `hash` gave both the same SHA-256 with no failures, and the Go `ExactCandidates` and `ExactDuplicates`, run on the saved output from a temporary test, picked the same 2 and returned one group of exactly those two.
 - `best_test.go` covers the best score, protected assets beating a higher score, ties and missing scores. Letting the best shot ignore protection fails `TestKeepProtected` and `TestKeepEditedOverBetterScore`.
+- Device `list` after folding renders: 1,159 assets became 1,146; the 13 removed were exactly the `IMG_E` files, each with one original sharing folder, number and date; the 13 originals are `edited` with `sidecarBytes` equal to the old value plus the render's bytes; the other 1,133 assets were unchanged.
 
 ### Problems found
 
@@ -54,6 +58,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Exact duplicates on the phone itself weren't tested, since it has none. Whether Photos' Duplicate command on the phone makes a byte-identical copy isn't known.
 - Video poster frames are grouped like photos; none of the 12 groups mixed a video with a photo, but nothing prevents it.
 - Over AFC the camera roll's folders are `100APPLE` to `122APPLE`, while ImageCaptureCore names them `YYYYMM_a`, so AFC paths and helper IDs share only the file name.
+- Whether deleting an edited original on the device path also removes its render is untested. Edited photos are protected from duplicate cleanup, so until a delete on a throwaway edited photo shows what happens, edited screenshots and videos stay out of device-path suggestions.
+- Whether any of the 12 near-duplicate groups found before increment 6 paired an original with its render wasn't checked; renders can't be grouped now.
 
 ## Step 10: photos-helper
 
