@@ -78,9 +78,9 @@ func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	r.note = ""
 	ids := r.groups[r.group].IDs
 	switch key.String() {
-	case "left", "h":
+	case "up", "left", "h":
 		r.cursor = max(r.cursor-1, 0)
-	case "right", "l":
+	case "down", "right", "l":
 		r.cursor = min(r.cursor+1, len(ids)-1)
 	case "k":
 		r.toggle(ids[r.cursor])
@@ -163,7 +163,7 @@ func (r Review) View() tea.View {
 	if r.note != "" {
 		b.WriteString(r.note + "\n")
 	}
-	b.WriteString("\nleft/right choose a photo, k keep or not, enter accept, s skip, p back,\nq save and quit, ctrl+c quit without saving\n")
+	b.WriteString("\narrows choose a photo, k keep or not, enter accept, s skip, p back,\nq save and quit, ctrl+c quit without saving\n")
 	return tea.NewView(b.String())
 }
 

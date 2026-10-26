@@ -43,11 +43,12 @@ command yourself.`,
 
 	root.AddGroup(
 		&cobra.Group{ID: groupReport, Title: "Report (read-only)"},
+		&cobra.Group{ID: groupReview, Title: "Review"},
 		&cobra.Group{ID: groupClean, Title: "Clean (dry run unless --apply)"},
 		&cobra.Group{ID: groupSetup, Title: "Setup"},
 		&cobra.Group{ID: groupTopics, Title: "Help topics (gk help <topic>)"},
 	)
-	root.AddCommand(newScanCmd(global), newIPhoneCmd(global), newHistoryCmd(global), newStatsCmd(global), newLogsCmd(global), newCleanCmd(global), newSetupCmd(global), newDoctorCmd(global))
+	root.AddCommand(newScanCmd(global), newIPhoneCmd(global), newHistoryCmd(global), newStatsCmd(global), newLogsCmd(global), newReviewCmd(global), newCleanCmd(global), newSetupCmd(global), newDoctorCmd(global))
 	root.AddCommand(newTopics()...)
 	return root
 }

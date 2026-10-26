@@ -36,6 +36,10 @@ func key(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "right":
 		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "ctrl+c":
 		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	}
@@ -75,6 +79,14 @@ func TestReviewSkipDeletesNothingFromGroup(t *testing.T) {
 func TestReviewChangeKeeper(t *testing.T) {
 	// Keep b too in the first group; in the second, keep e and drop d.
 	r, _ := review(t, "right", "k", "enter", "right", "k", "left", "k", "enter")
+	if got, want := r.Delete(), []string{"a", "d"}; !slices.Equal(got, want) {
+		t.Errorf("delete %q, want %q", got, want)
+	}
+}
+
+func TestReviewUpDownMoveLikeLeftRight(t *testing.T) {
+	// The same edits as TestReviewChangeKeeper, with up and down.
+	r, _ := review(t, "down", "k", "enter", "down", "k", "up", "k", "enter")
 	if got, want := r.Delete(), []string{"a", "d"}; !slices.Equal(got, want) {
 		t.Errorf("delete %q, want %q", got, want)
 	}
