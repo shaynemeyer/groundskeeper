@@ -4,6 +4,7 @@ package report
 
 import (
 	_ "embed"
+	"fmt"
 	"html/template"
 	"io"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
 	"github.com/shaynemeyer/groundskeeper/internal/ui"
@@ -20,7 +23,9 @@ import (
 var templateHTML string
 
 var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{
-	"bytes": ui.Bytes,
+	"bytes":   ui.Bytes,
+	"delta":   ui.Delta,
+	"seconds": func(ms int64) string { return fmt.Sprintf("%.1f s", float64(ms)/1000) },
 }).Parse(templateHTML))
 
 // Section is one group of items in the report.
@@ -44,6 +49,35 @@ type Report struct {
 	Disk      scan.Disk
 	Sections  []Section
 	Skipped   []size.Skip
+	Deltas    history.Deltas
+	Run       metrics.Run
+	Freed     int64 // moved to the Trash by clean commands since the last report
+}
+
+// Change is how much an item changed since the last run, or "" when there
+// is nothing to compare with or it didn't change.
+func (r Report) Change(it scan.Item) string {
+	if d := r.Deltas.ByKey[history.Key(it.Section, it.Label, it.Path)]; d != 0 {
+		return ui.Delta(d)
+	}
+	return ""
+}
+
+// Grew reports whether an item is larger than in the last run.
+func (r Report) Grew(it scan.Item) bool {
+	return r.Deltas.ByKey[history.Key(it.Section, it.Label, it.Path)] > 0
+}
+
+// BarWidth is a scanner's share of the slowest scanner's time, in percent.
+func (r Report) BarWidth(s metrics.Scanner) int {
+	var slowest int64
+	for _, sc := range r.Run.Scanners {
+		slowest = max(slowest, sc.DurationMS)
+	}
+	if slowest == 0 {
+		return 0
+	}
+	return int(100 * s.DurationMS / slowest)
 }
 
 // Reclaimable sums the items tagged safe.

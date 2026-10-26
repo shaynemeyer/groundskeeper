@@ -118,3 +118,17 @@ func TestMeasureAllKeepsOrder(t *testing.T) {
 		t.Fatalf("got %+v", res)
 	}
 }
+
+func TestStatsCountsWork(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "sub/a"), 10)
+	if err := os.Link(filepath.Join(dir, "sub/a"), filepath.Join(dir, "b")); err != nil {
+		t.Fatal(err)
+	}
+	m := newMeasurer()
+	m.Measure(context.Background(), dir)
+
+	if got := m.Stats(); got != (Stats{Files: 2, Dirs: 2, HardlinksDeduped: 1}) {
+		t.Fatalf("stats = %+v", got)
+	}
+}

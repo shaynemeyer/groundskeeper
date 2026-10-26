@@ -2,6 +2,7 @@ package cli
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,7 +15,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shaynemeyer/groundskeeper/internal/config"
+	"github.com/shaynemeyer/groundskeeper/internal/history"
 	"github.com/shaynemeyer/groundskeeper/internal/logging"
+	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/report"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
@@ -25,6 +28,7 @@ const (
 	folderTimeout = 2 * time.Minute
 	sizeWorkers   = 6
 	topItems      = 5
+	historyMonths = 6
 )
 
 // Tests replace these so scans stay inside a fake home directory.
@@ -106,11 +110,38 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	if err != nil {
 		return err
 	}
-	rep := report.Report{Generated: start, Disk: disk}
 	measurer := size.New(folderTimeout, sizeWorkers)
+	rep := report.Report{Generated: start, Disk: disk}
+	rep.Sections, rep.Skipped, rep.Run.Scanners = runScanners(ctx, log, newScanners(home, cfg, measurer), home)
+	rep.Run.Start = start
+	rep.Run.DurationMS = time.Since(start).Milliseconds()
+	rep.Run.Command = commandName(cmd)
+	rep.Run.Interactive = ui.IsTerminal(os.Stdin)
+	rep.Run.Size = measurer.Stats()
+	if err := addHistory(log, home, &rep, opts.dry); err != nil {
+		return err
+	}
+
+	path := ""
+	if !opts.dry {
+		if path, err = report.Write(config.Expand(cfg.OutputDir, home), rep); err != nil {
+			return fmt.Errorf("writing report: %w", err)
+		}
+		log.Info("report written", logging.Path(path))
+	}
+	log.Info("run finished", logging.Duration(time.Since(start)), logging.Bytes(rep.Reclaimable()))
+	printSummary(cmd.OutOrStdout(), rep, path)
+
+	if opts.open && path != "" {
+		return exec.CommandContext(ctx, "open", path).Run()
+	}
+	return nil
+}
+
+func newScanners(home string, cfg config.Config, measurer *size.Measurer) []scan.Scanner {
 	minBytes := cfg.MinSizeMB * 1_000_000
 	roots := expandAll(cfg.ProjectRoots, home)
-	scanners := []scan.Scanner{
+	return []scan.Scanner{
 		scan.Caches{Size: measurer, MinBytes: minBytes},
 		scan.Models{Size: measurer, ProjectRoots: roots, MinBytes: minBytes},
 		scan.Artifacts{
@@ -133,36 +164,86 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 			MinBytes:   minBytes,
 		},
 	}
+}
+
+// runScanners runs each scanner in turn, logging and timing it. A failed
+// scanner is recorded and the rest still run.
+func runScanners(ctx context.Context, log *logging.Logger, scanners []scan.Scanner, home string) ([]report.Section, []size.Skip, []metrics.Scanner) {
+	var sections []report.Section
+	var skipped []size.Skip
+	var stats []metrics.Scanner
 	for _, s := range scanners {
 		begin := time.Now()
 		f, err := s.Scan(ctx, home)
+		m := metrics.Scanner{Name: s.Name(), DurationMS: time.Since(begin).Milliseconds(), Items: len(f.Items), Skipped: len(f.Skipped)}
 		if err != nil {
+			m.Error = logging.KindOf(err)
 			log.Error("scanner failed", logging.ID("scanner", s.Name()), logging.ErrKind(err))
+			stats = append(stats, m)
 			continue
 		}
-		log.Info("scanner done", logging.ID("scanner", s.Name()), logging.Duration(time.Since(begin)),
-			logging.Count("items", len(f.Items)), logging.Count("skipped", len(f.Skipped)))
+		for _, it := range f.Items {
+			m.Bytes += it.Bytes
+		}
 		for _, sk := range f.Skipped {
+			if sk.Reason == "timeout" {
+				m.Timeouts++
+			}
 			log.Warn("path skipped", logging.Path(sk.Path), logging.ID("reason", sk.Reason))
 		}
-		rep.Sections = append(rep.Sections, report.Section{Name: s.Name(), Items: f.Items})
-		rep.Skipped = append(rep.Skipped, f.Skipped...)
+		log.Info("scanner done", logging.ID("scanner", s.Name()), logging.Duration(time.Since(begin)),
+			logging.Count("items", m.Items), logging.Count("skipped", m.Skipped))
+		stats = append(stats, m)
+		sections = append(sections, report.Section{Name: s.Name(), Items: f.Items})
+		skipped = append(skipped, f.Skipped...)
 	}
+	return sections, skipped, stats
+}
 
-	path := ""
-	if !opts.dry {
-		if path, err = report.Write(config.Expand(cfg.OutputDir, home), rep); err != nil {
-			return fmt.Errorf("writing report: %w", err)
+// addHistory compares rep with the previous snapshot and, unless dry,
+// saves rep as a new snapshot and prunes ones older than six months.
+func addHistory(log *logging.Logger, home string, rep *report.Report, dry bool) error {
+	dir := history.Dir(home)
+	scans, err := history.Scans(dir)
+	if err != nil {
+		log.Warn("history unreadable", logging.Path(dir), logging.ErrKind(err))
+	}
+	cur := snapshotOf(*rep)
+	var prev *history.Snapshot
+	var since time.Time
+	if len(scans) > 0 {
+		prev = &scans[len(scans)-1]
+		since = prev.Time
+	}
+	rep.Deltas = history.Compare(prev, cur)
+	cleans, _ := history.Cleans(dir, since)
+	for _, c := range cleans {
+		if !c.DryRun {
+			rep.Freed += c.MovedBytes
 		}
-		log.Info("report written", logging.Path(path))
 	}
-	log.Info("run finished", logging.Duration(time.Since(start)), logging.Bytes(rep.Reclaimable()))
-	printSummary(cmd.OutOrStdout(), rep, path)
-
-	if opts.open && path != "" {
-		return exec.CommandContext(ctx, "open", path).Run()
+	if dry {
+		return nil
 	}
+	if err := history.SaveScan(dir, cur); err != nil {
+		return fmt.Errorf("saving snapshot: %w", err)
+	}
+	removed, err := history.Prune(dir, rep.Generated.AddDate(0, -historyMonths, 0))
+	if err != nil {
+		log.Warn("pruning snapshots failed", logging.Path(dir), logging.ErrKind(err))
+	}
+	log.Info("snapshot saved", logging.Path(dir), logging.Count("pruned", removed))
 	return nil
+}
+
+func snapshotOf(rep report.Report) history.Snapshot {
+	s := history.Snapshot{Time: rep.Generated, Free: rep.Disk.Free, Total: rep.Disk.Total, Run: rep.Run}
+	for _, sec := range rep.Sections {
+		for _, it := range sec.Items {
+			s.Items = append(s.Items, history.Item{Section: it.Section, Label: it.Label, Path: it.Path, Bytes: it.Bytes})
+		}
+	}
+	return s
 }
 
 // commandName is the command path without the program name, such as
@@ -172,6 +253,19 @@ func commandName(cmd *cobra.Command) string {
 		return "scan"
 	}
 	return strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" ")
+}
+
+// changeNote is " (+2.1 GB)" for an item that changed since the last run,
+// red when it grew.
+func changeNote(rep report.Report, it scan.Item, plain bool) string {
+	change := rep.Change(it)
+	if change == "" {
+		return ""
+	}
+	if rep.Grew(it) {
+		change = ui.Grew(change, plain)
+	}
+	return "  (" + change + ")"
 }
 
 func expandAll(paths []string, home string) []string {
@@ -202,6 +296,9 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Free space   %s of %s\n", ui.Bytes(rep.Disk.Free), ui.Bytes(rep.Disk.Total))
 	fmt.Fprintf(&b, "Reclaimable  %s (safe items)\n", ui.Bytes(rep.Reclaimable()))
+	if rep.Deltas.HasPrevious() {
+		fmt.Fprintf(&b, "Since %s  %s free space\n", rep.Deltas.Previous.Format(dateFormat), ui.Delta(rep.Deltas.FreeDelta))
+	}
 	if len(rep.Skipped) > 0 {
 		fmt.Fprintf(&b, "Skipped      %d paths (see report)\n", len(rep.Skipped))
 	}
@@ -222,6 +319,6 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 	slices.SortFunc(items, func(a, b scan.Item) int { return cmp.Compare(b.Bytes, a.Bytes) })
 	fmt.Fprintln(w, "\nLargest items:")
 	for _, it := range items[:min(topItems, len(items))] {
-		fmt.Fprintf(w, "  %10s  %-6s  %s\n", ui.Bytes(it.Bytes), ui.Tag(it.Safety, plain), it.Label)
+		fmt.Fprintf(w, "  %10s  %-6s  %s%s\n", ui.Bytes(it.Bytes), ui.Tag(it.Safety, plain), it.Label, changeNote(rep, it, plain))
 	}
 }

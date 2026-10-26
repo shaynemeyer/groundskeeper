@@ -3,13 +3,18 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 )
 
 const marker = "GK-SECRET-MARKER-7f3a"
@@ -233,6 +238,187 @@ func TestCleanBrowsersRunningBrowserMessage(t *testing.T) {
 	}
 	if len(*trashed) != 0 {
 		t.Errorf("trashed %v while Chrome was running", *trashed)
+	}
+}
+
+func stateDir(home string) string { return filepath.Join(home, ".local/state/groundskeeper") }
+
+func readSnapshots(t *testing.T, home string) []history.Snapshot {
+	t.Helper()
+	scans, err := history.Scans(stateDir(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scans
+}
+
+func TestSecondScanShowsChanges(t *testing.T) {
+	home := fakeHome(t)
+	run(t, "scan")
+	if err := os.WriteFile(filepath.Join(home, ".npm/more"), make([]byte, 200_000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := run(t, "scan")
+
+	if !strings.Contains(out, "free space") || !strings.Contains(out, "npm  (+") {
+		t.Errorf("summary = %q", out)
+	}
+	data, _ := os.ReadFile(filepath.Join(home, "Reports/groundskeeper/latest.html"))
+	if !strings.Contains(string(data), "Growing fastest") {
+		t.Error("report has no Growing fastest section")
+	}
+}
+
+func TestDryScanSavesNoSnapshot(t *testing.T) {
+	home := fakeHome(t)
+	run(t, "scan", "--dry")
+	if _, err := os.Stat(stateDir(home)); !os.IsNotExist(err) {
+		t.Fatal("--dry wrote a snapshot")
+	}
+}
+
+func TestSnapshotRecordsScannerMetrics(t *testing.T) {
+	home := fakeHome(t)
+	run(t, "scan")
+
+	scans := readSnapshots(t, home)
+	if len(scans) != 1 {
+		t.Fatalf("got %d snapshots", len(scans))
+	}
+	r := scans[0].Run
+	if r.Command != "scan" || len(r.Scanners) != 8 || r.Size.Files == 0 {
+		t.Fatalf("run metrics = %+v", r)
+	}
+	caches := r.Scanners[0]
+	if caches.Name != "Caches" || caches.Items != 1 || caches.Bytes == 0 {
+		t.Errorf("caches metrics = %+v", caches)
+	}
+	info, err := os.Stat(filepath.Join(stateDir(home), scans[0].Time.Format("2006-01-02T1504")+".json"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("snapshot file: %v %v", info, err)
+	}
+}
+
+func TestAppliedCleanShowsAsFreedInNextReport(t *testing.T) {
+	home := fakeHome(t)
+	chromeCache(t, home)
+	fakeTools(t, "")
+	run(t, "clean", "browsers", "--apply")
+	cleans, _ := history.Cleans(stateDir(home), time.Time{})
+	if len(cleans) != 1 || cleans[0].DryRun || cleans[0].Moved != 1 {
+		t.Fatalf("clean snapshots = %+v", cleans)
+	}
+
+	run(t, "scan")
+	data, _ := os.ReadFile(filepath.Join(home, "Reports/groundskeeper/latest.html"))
+	if !strings.Contains(string(data), "Clean commands moved") {
+		t.Error("report doesn't mention space freed by clean")
+	}
+}
+
+func TestScanPrunesOnlyExpiredSnapshots(t *testing.T) {
+	home := fakeHome(t)
+	dir := stateDir(home)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"2025-01-01T0900.json", "notes.txt"} {
+		os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o600)
+	}
+	run(t, "scan")
+
+	if _, err := os.Stat(filepath.Join(dir, "2025-01-01T0900.json")); !os.IsNotExist(err) {
+		t.Error("expired snapshot kept")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes.txt")); err != nil {
+		t.Error("unrelated file removed")
+	}
+}
+
+func TestHistoryListsScansAndGrowth(t *testing.T) {
+	home := fakeHome(t)
+	if out := run(t, "history"); !strings.Contains(out, "No scans yet") {
+		t.Errorf("empty history = %q", out)
+	}
+	writeSnapshot(t, home, -48*time.Hour, 50_000)
+	run(t, "scan")
+
+	out := run(t, "history")
+	for _, want := range []string{"Scan", "Free", "Change", "Growing fastest since", "npm (Caches)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("history missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// writeSnapshot saves an earlier scan in which npm was smaller.
+func writeSnapshot(t *testing.T, home string, ago time.Duration, npmBytes int64) {
+	t.Helper()
+	s := history.Snapshot{Time: time.Now().Add(ago), Free: 1, Total: 2, Items: []history.Item{
+		{Section: "Caches", Label: "npm", Path: filepath.Join(home, ".npm"), Bytes: npmBytes},
+	}}
+	if err := history.SaveScan(stateDir(home), s); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStatsJSONMatchesSnapshot(t *testing.T) {
+	home := fakeHome(t)
+	run(t, "scan")
+	out := run(t, "stats", "--json")
+
+	var got []metrics.Run
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	want, _ := json.Marshal([]metrics.Run{readSnapshots(t, home)[0].Run})
+	gotJSON, _ := json.Marshal(got)
+	if string(gotJSON) != string(want) {
+		t.Fatalf("stats --json\n%s\nsnapshot\n%s", gotJSON, want)
+	}
+}
+
+func TestStatsShowsLastRunAndTrend(t *testing.T) {
+	home := fakeHome(t)
+	writeSnapshot(t, home, -48*time.Hour, 1)
+	run(t, "scan")
+
+	out := run(t, "stats")
+	for _, want := range []string{"Last scan", "Caches", "Unused apps", "Visited", "Clean runs since: 0 applied"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stats missing %q:\n%s", want, out)
+		}
+	}
+	trend := run(t, "stats", "--runs", "2")
+	if lines := strings.Split(strings.TrimSpace(trend), "\n"); len(lines) != 9 || !strings.Contains(lines[1], "-") {
+		t.Errorf("trend =\n%s", trend)
+	}
+}
+
+func TestLogsFiltersAndJSON(t *testing.T) {
+	fakeHome(t)
+	fakeTools(t, "")
+	run(t, "scan")
+	run(t, "clean", "browsers")
+
+	all := run(t, "logs", "-n", "500")
+	if !strings.Contains(all, "scanner done") || !strings.Contains(all, "clean browsers") {
+		t.Errorf("logs = %q", all)
+	}
+	scanOnly := run(t, "logs", "--cmd", "scan", "-n", "500")
+	if strings.Contains(scanOnly, "clean browsers  ") {
+		t.Errorf("--cmd scan shows clean entries:\n%s", scanOnly)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(run(t, "logs", "--level", "warn", "-n", "500")), "\n") {
+		if line != "" && !strings.Contains(line, "WARN") && !strings.Contains(line, "ERROR") {
+			t.Errorf("--level warn shows %q", line)
+		}
+	}
+	raw := run(t, "logs", "--json", "--run", "last")
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		if !json.Valid([]byte(line)) || !strings.Contains(line, `"cmd":"clean browsers"`) {
+			t.Errorf("--json --run last line %q", line)
+		}
 	}
 }
 

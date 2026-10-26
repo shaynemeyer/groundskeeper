@@ -16,3 +16,11 @@ func Bytes(n int64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", value, "kMGTP"[exp])
 }
+
+// Delta formats a size change with its sign: "+2.1 GB", "-800.0 MB".
+func Delta(n int64) string {
+	if n < 0 {
+		return "-" + Bytes(-n)
+	}
+	return "+" + Bytes(n)
+}

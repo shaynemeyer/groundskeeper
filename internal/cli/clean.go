@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/shaynemeyer/groundskeeper/internal/clean"
+	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/logging"
+	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
 	"github.com/shaynemeyer/groundskeeper/internal/ui"
@@ -89,6 +93,7 @@ func runCleanBrowsers(cmd *cobra.Command, global *globalOptions, opts *cleanBrow
 	if run == nil {
 		run = scan.RunTool
 	}
+	log.Info("run started", logging.Flag("dry_run", !opts.apply))
 	res, err := clean.Browsers{
 		Home:    home,
 		Keys:    opts.browsers,
@@ -99,10 +104,34 @@ func runCleanBrowsers(cmd *cobra.Command, global *globalOptions, opts *cleanBrow
 		Log:     log,
 	}.Clean(cmd.Context())
 	if err != nil {
+		log.Error("run failed", logging.ErrKind(err))
 		return err
 	}
+	m := cleanMetrics(commandName(cmd), res, opts.apply)
+	if err := history.SaveClean(history.Dir(home), m); err != nil {
+		return fmt.Errorf("saving clean snapshot: %w", err)
+	}
+	log.Info("run finished", logging.Count("moved", m.Moved), logging.Bytes(m.MovedBytes),
+		logging.Count("refused", m.Refused), logging.Count("failed", m.Failed), logging.Flag("dry_run", m.DryRun))
 	printClean(cmd.OutOrStdout(), res, opts.apply)
 	return nil
+}
+
+// cleanMetrics counts what a clean run moved, or would move in a dry run.
+func cleanMetrics(command string, res clean.Result, apply bool) metrics.Clean {
+	m := metrics.Clean{Time: time.Now(), Command: command, DryRun: !apply}
+	for _, a := range res.Actions {
+		switch a.Outcome {
+		case clean.Moved, clean.WouldMove:
+			m.Moved++
+			m.MovedBytes += a.Bytes
+		case clean.Refused:
+			m.Refused++
+		case clean.Failed:
+			m.Failed++
+		}
+	}
+	return m
 }
 
 func printClean(w io.Writer, res clean.Result, apply bool) {

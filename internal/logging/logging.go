@@ -42,9 +42,11 @@ func ID(key, id string) Field { return Field{slog.String(key, id)} }
 func Flag(key string, v bool) Field { return Field{slog.Bool(key, v)} }
 
 // ErrKind logs the kind of err, never its message.
-func ErrKind(err error) Field { return Field{slog.String("error_kind", kind(err))} }
+func ErrKind(err error) Field { return Field{slog.String("error_kind", KindOf(err))} }
 
-func kind(err error) string {
+// KindOf names the kind of err without its message: "permission",
+// "not_exist", "timeout", "canceled" or "other".
+func KindOf(err error) string {
 	switch {
 	case errors.Is(err, fs.ErrPermission):
 		return "permission"

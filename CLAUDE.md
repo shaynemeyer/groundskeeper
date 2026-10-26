@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Build steps 1 to 5 of `docs/groundskeeper-plan.md` are done: CLI skeleton, logging, size engine, all Mac scanners (Caches, AI models, Build artifacts, Toolchains, Containers, Downloads, Browsers, Unused apps), the HTML report, and `clean browsers` (`internal/clean`). CLI tests keep scans inside a fake home through the `appDirs` and `toolRunner` hooks in `internal/cli/scan.go`. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
+Build steps 1 to 6 of `docs/groundskeeper-plan.md` are done: CLI skeleton, logging, size engine, all Mac scanners, the HTML report, `clean browsers` (`internal/clean`), and history with metrics (`internal/history`, `internal/metrics`) shown by the report and the `history`, `stats` and `logs` commands. CLI tests keep scans inside a fake home through the `appDirs` and `toolRunner` hooks in `internal/cli/scan.go`. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
 
 After each build step, add an entry at the top of `docs/build-log.md`: what was built, decisions, problems found (with the evidence that proved the root cause), what was verified and how, and what is still open. Keep personal paths and data out of it.
 

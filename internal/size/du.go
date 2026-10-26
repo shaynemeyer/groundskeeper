@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -38,6 +39,20 @@ type Measurer struct {
 
 	mu   sync.Mutex
 	seen map[inode]struct{}
+
+	files, dirs, deduped atomic.Int64
+}
+
+// Stats counts the work a Measurer has done.
+type Stats struct {
+	Files            int64 `json:"files"`
+	Dirs             int64 `json:"dirs"`
+	HardlinksDeduped int64 `json:"hardlinksDeduped"`
+}
+
+// Stats returns the files and folders visited and hardlinks counted once.
+func (m *Measurer) Stats() Stats {
+	return Stats{Files: m.files.Load(), Dirs: m.dirs.Load(), HardlinksDeduped: m.deduped.Load()}
 }
 
 // New returns a Measurer with a per-folder timeout and a worker count.
@@ -65,6 +80,11 @@ func (m *Measurer) Measure(ctx context.Context, root string) Result {
 		info, err := d.Info()
 		if err != nil {
 			return m.skip(&res, path, d, err)
+		}
+		if d.IsDir() {
+			m.dirs.Add(1)
+		} else {
+			m.files.Add(1)
 		}
 		res.Bytes += m.allocated(info)
 		return nil
@@ -128,6 +148,7 @@ func (m *Measurer) allocated(info fs.FileInfo) int64 {
 		m.seen[key] = struct{}{}
 		m.mu.Unlock()
 		if dup {
+			m.deduped.Add(1)
 			return 0
 		}
 	}

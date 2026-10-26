@@ -125,7 +125,7 @@ func (b Browsers) act(ctx context.Context, f scan.BrowserFolders, path string, r
 			a.Outcome, a.Reason = Failed, "trash could not move it"
 		}
 	}
-	b.Log.Info("clean browsers", logging.Path(path), logging.Bytes(a.Bytes),
+	b.Log.Info("folder", logging.Path(path), logging.Bytes(a.Bytes),
 		logging.ID("outcome", a.Outcome), logging.Flag("dry_run", !b.Apply))
 	return a
 }

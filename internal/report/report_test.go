@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
 )
@@ -106,5 +108,66 @@ func TestWriteTightensExistingFile(t *testing.T) {
 	info, _ := os.Stat(latest)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v, want 0600", info.Mode().Perm())
+	}
+}
+
+func withHistory() Report {
+	r := sample()
+	prev := history.Snapshot{
+		Time: time.Date(2026, 10, 22, 9, 0, 0, 0, time.Local),
+		Free: 109_000_000_000,
+		Items: []history.Item{
+			{Section: "", Label: "npm", Path: "/h/.npm", Bytes: 500_000_000},
+			{Section: "", Label: "other", Path: "/h/x", Bytes: 1_200_000_000},
+		},
+	}
+	cur := history.Snapshot{Free: r.Disk.Free, Items: []history.Item{
+		{Label: "npm", Path: "/h/.npm", Bytes: 2_000_000_000},
+		{Label: "other", Path: "/h/x", Bytes: 1_000_000_000},
+	}}
+	r.Deltas = history.Compare(&prev, cur)
+	r.Run = metrics.Run{DurationMS: 25_000, Scanners: []metrics.Scanner{
+		{Name: "Caches", DurationMS: 7_000, Items: 2},
+		{Name: "Build artifacts", DurationMS: 70_000, Items: 80, Timeouts: 1},
+		{Name: "Containers", DurationMS: 200, Error: "timeout"},
+	}, Size: size.Stats{Files: 1234, Dirs: 56, HardlinksDeduped: 7}}
+	r.Freed = 3_000_000_000
+	return r
+}
+
+func TestRenderShowsChangesSinceLastRun(t *testing.T) {
+	html := render(t, withHistory())
+	for _, want := range []string{
+		"Free space since Thu 22 Oct 09:00", "-9.0 GB",
+		"Growing fastest", `class="num grew">&#43;1.5 GB`, // html/template escapes +
+		"-200.0 MB",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+}
+
+func TestRenderFirstRunHasNoChangeColumn(t *testing.T) {
+	html := render(t, sample())
+	if strings.Contains(html, "<th>Change</th>") || strings.Contains(html, "Growing fastest") {
+		t.Error("first run shows changes")
+	}
+}
+
+func TestRenderRunDetails(t *testing.T) {
+	html := render(t, withHistory())
+	for _, want := range []string{
+		"Run details", "25.0 s", "1 timed out", "failed (timeout)",
+		`<tr class="slow"><td>Build artifacts`, "width: 100%",
+		"Visited 1234 files and 56 folders; 7 hardlinks counted once.",
+		"Clean commands moved 3.0 GB to the Trash since the last report.",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("run details missing %q", want)
+		}
+	}
+	if strings.Contains(html, `<tr class="slow"><td>Caches`) {
+		t.Error("fast scanner highlighted")
 	}
 }

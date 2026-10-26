@@ -492,7 +492,7 @@ Each run records metrics in its snapshot, so they share the snapshot's pruning a
 
 | Metric | Detail |
 |---|---|
-| Run | Start time, total duration, command, exit status, interactive or scheduled |
+| Run | Start time, total duration, command, and whether stdin was a terminal (launchd runs and pipes aren't). A failed scanner is recorded on that scanner's row rather than as an exit status, because the run still finishes and saves a snapshot. |
 | Per scanner | Duration, items found, bytes measured, paths skipped, timeouts, errors |
 | Size engine | Files and folders visited, hardlinks deduped |
 | Disk | Free and total space (already in the snapshot) |
@@ -519,6 +519,8 @@ Cleanup runs write a small snapshot of their own (`clean-YYYY-MM-DDTHHMM.json`) 
 ## History and deltas
 
 - Each run writes a snapshot to `~/.local/state/groundskeeper/YYYY-MM-DDTHHMM.json` containing the time, free space, total space, size per item, and the run's metrics (see [Logging and metrics](#logging-and-metrics)).
+- Two scans in the same minute share a file name, so the later one replaces the earlier.
+- `--dry` reads history to show changes but never writes a snapshot.
 - Each run loads the most recent previous snapshot and computes:
   - the change in free space
   - the change per item

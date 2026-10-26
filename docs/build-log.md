@@ -2,6 +2,54 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 6: History, deltas and metrics
+
+### Built
+
+- **`internal/history`:** each scan saves `~/.local/state/groundskeeper/YYYY-MM-DDTHHMM.json` (`0600`, folder `0700`). Each clean run saves `clean-YYYY-MM-DDTHHMM.json`. Snapshots older than six months are pruned, and only files whose names match those patterns are ever removed. `Compare` works out the change in free space, the change per item, and the five fastest-growing items (new items count from zero).
+- **`internal/metrics`:**
+  - per run: start, duration, command, whether run from a terminal
+  - per scanner: time, items, bytes, skipped, timeouts, error kind
+  - size engine: files and folders visited, hardlinks counted once
+  - per clean run: moved, refused and failed counts, and bytes
+- **Report:**
+  - a "Free space since" card and a Change column (red when an item grew)
+  - a "Growing fastest" section
+  - a "Run details" section: a timing bar per scanner, slow (a minute or more) or failed scanners highlighted, size-engine counts, and space freed by clean commands since the last report
+- **Terminal summary:** the change in free space since the last run, and each largest item's change.
+- **New commands:** `history` (recent scans plus fastest-growing items), `stats` (last run, `--runs N` trend, `--json`) and `logs` (`--level`, `--run last`, `--cmd`, `-n`, `--follow`, `--json`).
+- **Shared helpers:** `ui.Table` (Lip Gloss rounded table in a terminal, plain aligned columns otherwise), `ui.Delta` and `ui.Grew`.
+- **Clean runs** now log their own start and end with totals.
+
+### Decisions
+
+- Failed scanners are recorded per scanner instead of as an exit status, because the run still finishes and saves a snapshot.
+- "Interactive" means stdin is a terminal, which is false for launchd jobs.
+- `--dry` reads history to show changes but never writes a snapshot.
+- Two scans in the same minute share a snapshot name, and the later one replaces the earlier.
+
+### Problems found and fixed
+
+- **Clean runs with nothing to do left no log lines.** A `logs` test exposed it, against the plan's "start and end of each run". Clean now logs `run started` and `run finished`.
+- **`logs` printed sizes in scientific notation** (`bytes=4.3041574912e+10`) on a real Mac, because JSON numbers decode as floats. A failing test came first, then the fix: decoding with `UseNumber`.
+- **"Since" dates were ambiguous for scans on the same day,** so they now include the time.
+- **Two wrong test expectations (code fine):** `html/template` escapes `+` as `&#43;`, and `go test` runs with a terminal as stdin, so `Interactive` is true there.
+
+### Verified
+
+- `stats --json` output matches the saved snapshot's metrics byte for byte (CLI test).
+- Pruning removes expired snapshots and keeps unrelated files, look-alike names and folders (unit and CLI tests).
+- On a real Mac:
+  - Two scans a minute apart produced private snapshots, a change summary and a Growing fastest list.
+  - `stats --runs 2` showed per-scanner times across both runs.
+  - `logs --follow` printed a concurrent clean run's entries and exited cleanly on Ctrl-C.
+- `logs` showed macOS blocking another app's `~/Library/Containers` folder with a permission error, which is recorded as skipped. This resolves the step 4 question: no prompt appeared.
+
+### Open
+
+- `logs` reads the current log file only, not the rotated `.1` to `.3` files.
+- `--follow --run last` with no earlier entries matches nothing until a run's ID is known.
+
 ## Step 5: `clean browsers`
 
 ### Built

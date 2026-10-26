@@ -45,6 +45,6 @@ command yourself.`,
 		&cobra.Group{ID: groupReport, Title: "Report (read-only)"},
 		&cobra.Group{ID: groupClean, Title: "Clean (dry run unless --apply)"},
 	)
-	root.AddCommand(newScanCmd(global), newCleanCmd(global))
+	root.AddCommand(newScanCmd(global), newHistoryCmd(global), newStatsCmd(global), newLogsCmd(global), newCleanCmd(global))
 	return root
 }
