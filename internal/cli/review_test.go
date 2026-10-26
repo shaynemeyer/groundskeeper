@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -118,4 +120,37 @@ func execute(args ...string) error {
 	root.SetOut(io.Discard)
 	root.SetErr(io.Discard)
 	return root.ExecuteContext(context.Background())
+}
+
+func TestReviewPhotosFetchesThumbnailsAndRemovesThem(t *testing.T) {
+	home := fakeHome(t)
+	savePhotoScan(t, home, oneGroup)
+	var outDir string
+	var stdin []byte
+	photoRunner = func(_ context.Context, in []byte, _ string, args ...string) ([]byte, error) {
+		outDir, stdin = args[len(args)-1], in
+		path := filepath.Join(outDir, "1.jpg")
+		if err := os.WriteFile(path, []byte("jpeg"), 0o600); err != nil {
+			return nil, err
+		}
+		return []byte(`{"source":"device","thumbnails":[{"id":"F/IMG_0001.HEIC","path":"` + path + `"}],"failed":[]}`), nil
+	}
+	t.Cleanup(func() { photoRunner = iphone.RunHelper })
+	var seen bool
+	reviewRunner = func(r tui.Review, _ io.Writer) (tui.Review, error) {
+		m, _ := r.Update(r.Init()())
+		r = m.(tui.Review)
+		_, err := os.Stat(filepath.Join(outDir, "1.jpg"))
+		seen = err == nil
+		return r, nil
+	}
+	t.Cleanup(func() { reviewRunner = reviewInTerminal })
+
+	run(t, "review", "photos")
+	if !seen || string(stdin) != `["F/IMG_0001.HEIC","F/IMG_0002.HEIC"]` {
+		t.Errorf("thumbnail written %v, asked for %s", seen, stdin)
+	}
+	if info, err := os.Stat(outDir); err == nil {
+		t.Errorf("thumbnail folder left behind: %v", info.Mode())
+	}
 }

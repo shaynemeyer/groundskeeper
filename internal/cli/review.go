@@ -1,17 +1,22 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"os/exec"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/shaynemeyer/groundskeeper/internal/clean"
+	"github.com/shaynemeyer/groundskeeper/internal/doctor"
 	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/iphone"
 	"github.com/shaynemeyer/groundskeeper/internal/logging"
 	"github.com/shaynemeyer/groundskeeper/internal/tui"
 	"github.com/shaynemeyer/groundskeeper/internal/ui"
@@ -42,7 +47,10 @@ func newReviewPhotosCmd(global *globalOptions) *cobra.Command {
 		Use:   "photos",
 		Short: "Step through duplicate photo groups",
 		Long: `Shows the duplicate groups from the last gk iphone, one at a time, with the
-best shot marked Keep and the rest marked Extra. Accept a group as it is,
+best shot marked Keep and the rest marked Extra. Press space to see the
+group's photos in Quick Look; they're fetched from the phone or the Photos
+library into a private temporary folder that's removed when the review
+ends. Accept a group as it is,
 change which photos are kept, or skip it. The extras of the groups you
 accept are saved as the photos to delete.
 
@@ -82,7 +90,13 @@ func runReviewPhotos(cmd *cobra.Command, global *globalOptions) error {
 		return nil
 	}
 	fmt.Fprintf(out, "Reviewing %d groups from the photo scan of %s.\n", len(groups), scan.Time.Format(dateFormat))
-	r, err := reviewRunner(tui.NewReview(groups, scan.Photos.Assets), out)
+	dir, err := os.MkdirTemp("", "groundskeeper-review-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	viewer := photoViewer(cmd.Context(), home, scan.Photos.Source, dir)
+	r, err := reviewRunner(tui.NewReview(groups, scan.Photos.Assets, viewer), out)
 	if errors.Is(err, errNoTerminal) {
 		return fmt.Errorf("%w: run gk review photos in a terminal", err)
 	}
@@ -109,6 +123,45 @@ func runReviewPhotos(cmd *cobra.Command, global *globalOptions) error {
 	log.Info("photo review saved", logging.Path(path), logging.Count("photos", len(sel.Delete)), logging.Bytes(sel.Bytes()))
 	fmt.Fprintf(out, "Saved %d photos to delete, %s. Nothing has been deleted.\n", len(sel.Delete), ui.Bytes(sel.Bytes()))
 	return nil
+}
+
+// photoViewer fetches thumbnails through photos-helper into dir, which
+// os.MkdirTemp made 0700, and previews them with Quick Look.
+func photoViewer(ctx context.Context, home, source, dir string) tui.Viewer {
+	h := iphone.Helper{Path: doctor.HelperPath(home), Source: source, Run: photoRunner}
+	return tui.Viewer{
+		Thumbnails: func(ids []string) (map[string]string, error) {
+			thumbs, _, err := h.Thumbnails(ctx, ids, dir)
+			if err != nil {
+				return nil, errors.New(thumbnailProblem(err))
+			}
+			paths := map[string]string{}
+			for _, t := range thumbs {
+				paths[t.ID] = t.Path
+			}
+			return paths, nil
+		},
+		Preview: func(paths []string) *exec.Cmd {
+			return exec.CommandContext(ctx, "qlmanage", append([]string{"-p"}, paths...)...)
+		},
+	}
+}
+
+// thumbnailProblem says briefly why thumbnails couldn't be fetched.
+func thumbnailProblem(err error) string {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "photos-helper isn't installed. Run make install."
+	case errors.Is(err, iphone.ErrNoDevice):
+		return "no iPhone answered. Connect and unlock it."
+	case errors.Is(err, iphone.ErrLocked):
+		return "the iPhone is locked. Unlock it."
+	case errors.Is(err, iphone.ErrDenied):
+		return "this terminal app doesn't have Photos access."
+	case errors.Is(err, iphone.ErrTimeout):
+		return "the iPhone didn't answer in time."
+	}
+	return "photos-helper failed."
 }
 
 // reviewInTerminal runs the review when stdin and out are both terminals.

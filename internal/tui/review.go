@@ -30,11 +30,16 @@ type Review struct {
 	cursor   int
 	note     string
 	saved    bool
+	viewer   Viewer
+	paths    map[string]string // thumbnail JPEGs by ID
+	photoErr string            // why photos can't be shown
 }
 
-// NewReview starts a review of groups, whose photos are in assets.
-func NewReview(groups []iphone.Group, assets []iphone.Asset) Review {
-	r := Review{groups: groups, assets: map[string]iphone.Asset{}, decision: make([]int, len(groups))}
+// NewReview starts a review of groups, whose photos are in assets, shown
+// through viewer.
+func NewReview(groups []iphone.Group, assets []iphone.Asset, viewer Viewer) Review {
+	r := Review{groups: groups, assets: map[string]iphone.Asset{}, decision: make([]int, len(groups)),
+		viewer: viewer, paths: map[string]string{}}
 	for _, a := range assets {
 		r.assets[a.ID] = a
 	}
@@ -68,9 +73,24 @@ func (r Review) Delete() []string {
 	return ids
 }
 
-func (r Review) Init() tea.Cmd { return nil }
+func (r Review) Init() tea.Cmd { return r.fetch() }
 
 func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case thumbsMsg:
+		for id, p := range msg.paths {
+			r.paths[id] = p
+		}
+		if msg.err != nil {
+			r.photoErr = "Photos can't be shown: " + msg.err.Error()
+		}
+		return r, nil
+	case previewMsg:
+		if msg.err != nil {
+			r.note = "Quick Look couldn't open the photos."
+		}
+		return r, nil
+	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok || len(r.groups) == 0 {
 		return r, nil
@@ -84,12 +104,15 @@ func (r Review) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.cursor = min(r.cursor+1, len(ids)-1)
 	case "k":
 		r.toggle(ids[r.cursor])
+	case "space":
+		return r, r.preview()
 	case "enter":
 		return r.decide(accepted)
 	case "s":
 		return r.decide(skipped)
 	case "p":
 		r.move(max(r.group-1, 0))
+		return r, r.fetch()
 	case "q":
 		r.saved = true
 		return r, tea.Quit
@@ -124,7 +147,7 @@ func (r Review) decide(d int) (tea.Model, tea.Cmd) {
 		return r, tea.Quit
 	}
 	r.move(r.group + 1)
-	return r, nil
+	return r, r.fetch()
 }
 
 func (r *Review) move(group int) {
@@ -160,10 +183,13 @@ func (r Review) View() tea.View {
 	}
 	count, bytes := r.totals()
 	fmt.Fprintf(&b, "\nAccepted so far: %d photos to delete, %s.\n", count, ui.Bytes(bytes))
+	if r.photoErr != "" {
+		b.WriteString(r.photoErr + "\n")
+	}
 	if r.note != "" {
 		b.WriteString(r.note + "\n")
 	}
-	b.WriteString("\narrows choose a photo, k keep or not, enter accept, s skip, p back,\nq save and quit, ctrl+c quit without saving\n")
+	b.WriteString("\narrows choose a photo, k keep or not, space preview, enter accept, s skip,\np back, q save and quit, ctrl+c quit without saving\n")
 	return tea.NewView(b.String())
 }
 

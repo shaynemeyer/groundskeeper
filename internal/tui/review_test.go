@@ -40,6 +40,8 @@ func key(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case " ":
+		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "ctrl+c":
 		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	}
@@ -49,7 +51,7 @@ func key(s string) tea.KeyPressMsg {
 // review presses keys in a fresh review and reports whether it quit.
 func review(t *testing.T, keys ...string) (Review, bool) {
 	t.Helper()
-	r := NewReview(groups, assets)
+	r := NewReview(groups, assets, Viewer{})
 	quit := false
 	for _, k := range keys {
 		m, cmd := r.Update(key(k))
