@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/shaynemeyer/groundskeeper/internal/size"
 )
@@ -67,15 +68,31 @@ func otherLibraryCaches(home string) ([]Item, error) {
 	if err != nil {
 		return nil, err
 	}
+	browsers := browserCacheRoots(filepath.Join(home, "Library"))
 	var items []Item
 	for _, e := range entries {
 		path := filepath.Join(dir, e.Name())
-		if !e.IsDir() || isKnownCache(home, path) {
-			continue
+		switch {
+		case !e.IsDir() || isKnownCache(home, path) || slices.Contains(browsers, path):
+		case holdsBrowser(path, browsers):
+			// A vendor folder such as Google: list its other children.
+			for _, child := range readDirs(path) {
+				sub := filepath.Join(path, child)
+				if !slices.Contains(browsers, sub) && !holdsBrowser(sub, browsers) {
+					items = append(items, Item{Section: "Caches", Label: e.Name() + "/" + child, Path: sub, Safety: Safe})
+				}
+			}
+		default:
+			items = append(items, Item{Section: "Caches", Label: e.Name(), Path: path, Safety: Safe})
 		}
-		items = append(items, Item{Section: "Caches", Label: e.Name(), Path: path, Safety: Safe})
 	}
 	return items, nil
+}
+
+func holdsBrowser(dir string, browsers []string) bool {
+	return slices.ContainsFunc(browsers, func(b string) bool {
+		return strings.HasPrefix(b, dir+string(filepath.Separator))
+	})
 }
 
 func isKnownCache(home, path string) bool {

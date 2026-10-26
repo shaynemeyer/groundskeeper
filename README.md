@@ -4,7 +4,7 @@
 
 <p align="center">Keep your Mac's disk, and a connected iPhone, free of clutter.</p>
 
-> **Status:** early development. `scan` reports caches, AI models, build artifacts and toolchains today. See the [implementation plan](docs/groundskeeper-plan.md) for what's next.
+> **Status:** early development. `scan` covers every Mac scanner in the plan; cleanup commands and scheduling come next. See the [implementation plan](docs/groundskeeper-plan.md) for what's next.
 
 Groundskeeper (`groundskeeper`, alias `gk`) is a Lot86 terminal tool for macOS. Twice a week it scans for space you can reclaim and writes an HTML report. It looks for:
 
@@ -45,3 +45,4 @@ make run                          # scan and open the report
 
 - [Implementation plan](docs/groundskeeper-plan.md): architecture, scanners, security, logging and build order
 - [Rook design brief](docs/rook-design-brief.md): the mascot, palette and voice
+- [Build log](docs/build-log.md): what each build step delivered, decisions and open items

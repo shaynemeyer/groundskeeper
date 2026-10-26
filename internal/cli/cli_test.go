@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,6 +19,12 @@ func fakeHome(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("NO_COLOR", "")
+	appDirs = func(home string) []string { return []string{filepath.Join(home, "Applications")} }
+	toolRunner = func(context.Context, string, ...string) ([]byte, error) { return nil, exec.ErrNotFound }
+	t.Cleanup(func() {
+		appDirs = func(string) []string { return nil }
+		toolRunner = nil
+	})
 	write := func(rel string, data []byte) {
 		path := filepath.Join(home, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

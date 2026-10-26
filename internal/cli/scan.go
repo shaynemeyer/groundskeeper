@@ -27,6 +27,12 @@ const (
 	topItems      = 5
 )
 
+// Tests replace these so scans stay inside a fake home directory.
+var (
+	appDirs    = func(home string) []string { return nil } // nil: /Applications and ~/Applications
+	toolRunner scan.Runner                                 // nil: the real podman, mdls, plutil, ps and brew
+)
+
 type scanOptions struct {
 	open bool
 	dry  bool
@@ -106,6 +112,17 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 			MinBytes:  minBytes,
 		},
 		scan.Toolchains{Size: measurer, MinBytes: minBytes},
+		scan.Containers{Size: measurer, Run: toolRunner, MinBytes: minBytes},
+		scan.Downloads{Size: measurer, StaleDays: cfg.StaleDays, MinBytes: minBytes},
+		scan.Browsers{Size: measurer, MinBytes: minBytes},
+		scan.Apps{
+			Size:       measurer,
+			Run:        toolRunner,
+			Dirs:       appDirs(home),
+			UnusedDays: cfg.AppUnusedDays,
+			Exclude:    cfg.AppExclude,
+			MinBytes:   minBytes,
+		},
 	}
 	for _, s := range scanners {
 		begin := time.Now()

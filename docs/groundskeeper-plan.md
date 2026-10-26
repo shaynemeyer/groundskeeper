@@ -69,8 +69,8 @@ type Item struct {
 | **AI models: other** | `~/.lmstudio`, ComfyUI model folders if present | review | — |
 | **Build artifacts** | See below | safe if stale, otherwise review | `cargo clean --manifest-path …`, `rm -rf …/.next` |
 | **Toolchains** | rustup toolchains, Volta Node versions, pyenv versions, uv Pythons (`~/.local/share/uv/python`) | review | `rustup toolchain uninstall …` |
-| **Containers** | `podman system df --format json` if Podman is installed | review | `podman system prune` |
-| **Downloads** | Files older than 90 days, largest first | review | — |
+| **Containers** | The Podman machine's disk image on the Mac, plus reclaimable images, containers and volumes inside it from `podman system df --format json`. A stopped machine is never started. | review | `podman image prune -a`, `podman container prune`, `podman volume prune` |
+| **Downloads** | Top-level files and folders that arrived more than `staleDays` ago, largest first. Arrival is the creation time, because downloads often keep the server's modification time. | review | — |
 | **iPhone (USB)** | Storage, apps by size with a "probably unused" flag, shared app files, and duplicate photos (see [iPhone mode](#iphone-mode)) | review | `groundskeeper clean iphone-apps <bundleID>` |
 | **Browsers** | Cache, code cache, GPU cache, service-worker cache, on-device AI models and site data per browser and profile (see below) | safe / review / keep | `groundskeeper clean browsers --dry-run` |
 | **Unused apps** | Apps in `/Applications` and `~/Applications` not opened in 120+ days, with the app's size plus its leftover data (see below) | review | `brew uninstall --cask --zap <name>` or Move to Trash |
@@ -79,7 +79,7 @@ type Item struct {
 
 **Last used.** Read `kMDItemLastUsedDate` for each `.app` with `mdls -raw -name kMDItemLastUsedDate`. macOS updates this whenever an app is opened through Finder, the Dock, Spotlight or `open`.
 
-Some apps are launched mostly from a terminal, such as VS Code via `code`, and that may not update the date. To avoid false positives, the scanner also checks the newest modified date in the app's `Application Support`, `Saved Application State` and `Containers` folders, and uses whichever date is more recent.
+Some apps are launched mostly from a terminal, such as VS Code via `code`, and that may not update the date. To avoid false positives, the scanner also checks the newest modified date in the app's `Preferences/<bundle ID>.plist`, `Application Support`, `Saved Application State` and `Containers` folders, and uses whichever date is more recent. The preferences file matters because it is keyed by bundle ID: an app's data folder can be named differently from the app (`iTerm.app` keeps its data in `iTerm2`), and without the preferences file iTerm was wrongly flagged on a real Mac.
 
 **Confidence.** Each recommendation is labelled:
 - **High:** both signals agree the app is older than the threshold.
@@ -117,11 +117,13 @@ The scanner finds every installed browser and every profile, then measures each 
 
 | Browser | Cache locations (Safe) | Larger items (Review) |
 |---|---|---|
-| Chrome | `~/Library/Caches/Google/Chrome/<Profile>/{Cache,Code Cache}`; in `Application Support/Google/Chrome/<Profile>/`: `GPUCache`, `Service Worker/CacheStorage` | On-device AI model (`OptGuideOnDeviceModel`, several GB; Chrome re-downloads it unless the feature is turned off); old component updates; `Crashpad` dumps |
+| Chrome | `~/Library/Caches/Google/Chrome/<Profile>/{Cache,Code Cache}`; in `Application Support/Google/Chrome/<Profile>/`: `GPUCache` | `Service Worker` (Offline data tier); on-device AI model (`OptGuideOnDeviceModel`, several GB; Chrome re-downloads it unless the feature is turned off); old component updates; `Crashpad` dumps |
 | Edge / Brave / Arc | Same Chromium layout under `Microsoft Edge`, `BraveSoftware/Brave-Browser`, `Arc` | Same as Chrome |
 | Firefox | `~/Library/Caches/Firefox/Profiles/*/cache2`, `startupCache` | `storage/default` site data |
 | Safari | `~/Library/Caches/com.apple.Safari`; container caches under `~/Library/Containers/com.apple.Safari` | Needs Full Disk Access to read; listed under Skipped paths otherwise |
 | DuckDuckGo | `~/Library/Caches/com.duckduckgo.macos.browser` | — |
+
+A Chromium browser's cache folder is `~/Library/Caches` plus the same relative path as its data folder ([Chromium docs](https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md)), which gives Arc's cache location too. Without Full Disk Access, macOS blocks listing Chrome, Edge and Brave's data folders, so they go under Skipped paths while the cache side is still measured. The Caches scanner leaves these browser folders to this scanner, so nothing is counted twice.
 
 Three tiers appear in the report for each profile:
 - **Cache (Safe).** Pages and code that the browser re-downloads when needed. Clearing it costs nothing except a slightly slower first visit.
@@ -441,7 +443,8 @@ With Full Disk Access, Groundskeeper can see browser profiles, app containers, M
 - Suggested cleanup commands quote paths for the shell, so a crafted folder name can't inject a command when the user copies the hint.
 
 **What it runs**
-- External tools (`git`, `mdls`, `brew`, `pgrep`, `podman`, `osascript`, `photos-helper`, `qlmanage`) are started with [`exec.CommandContext`](https://pkg.go.dev/os/exec) and separate arguments, never through `sh -c`.
+- External tools are looked up in `$PATH`, then in `/opt/homebrew/bin`, `/usr/local/bin` and `/opt/podman/bin`, because launchd jobs only get `/usr/bin:/bin:/usr/sbin:/sbin`. `brew` runs with `HOMEBREW_NO_AUTO_UPDATE=1` so a scan never makes it update over the network.
+- External tools (`git`, `mdls`, `plutil`, `ps`, `brew`, `pgrep`, `podman`, `osascript`, `photos-helper`, `qlmanage`) are started with [`exec.CommandContext`](https://pkg.go.dev/os/exec) and separate arguments, never through `sh -c`.
 - Notification text is passed to `osascript` as an argument (`on run argv`), not inserted into the AppleScript source.
 - `photos-helper` is called by absolute path from the install location, not looked up through `$PATH`.
 
