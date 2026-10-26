@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shaynemeyer/groundskeeper/internal/clean"
 	"github.com/shaynemeyer/groundskeeper/internal/history"
@@ -183,5 +184,65 @@ func TestCleanIPhoneAppsCompletesSnapshotIDs(t *testing.T) {
 	out := run(t, "__complete", "clean", "iphone-apps", "")
 	if !strings.Contains(out, "com.example.app1\t") || strings.Contains(out, "com.apple.") {
 		t.Errorf("completions = %q", out)
+	}
+}
+
+// plantScans saves the fixture phone as iPhone snapshots daysAgo old.
+func plantScans(t *testing.T, home string, daysAgo ...int) {
+	t.Helper()
+	raw, _ := phoneReader()
+	for _, d := range daysAgo {
+		s := history.PhoneSnapshot{Time: time.Now().AddDate(0, 0, -d), Phone: iphone.Parse(raw)}
+		if err := history.SavePhone(history.PhoneDir(home), s); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func reportHTML(t *testing.T, home string) string {
+	t.Helper()
+	html, err := os.ReadFile(filepath.Join(home, "Reports/groundskeeper/latest.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(html)
+}
+
+func TestIPhoneListsAppsUnchangedInMonthlyScans(t *testing.T) {
+	home := fakeHome(t)
+	fakePhone(t, nil)
+	plantScans(t, home, 150, 125, 100, 75, 50, 25)
+	run(t, "iphone")
+
+	html := reportHTML(t, home)
+	for _, want := range []string{"Probably unused", "gk clean iphone-apps &#39;com.example.app1&#39;", "based on 7 iPhone scans"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report lacks %q", want)
+		}
+	}
+	if strings.Contains(html, "gk clean iphone-apps &#39;com.apple.") {
+		t.Error("an Apple app is listed as probably unused")
+	}
+}
+
+func TestIPhoneSparseScansListNothing(t *testing.T) {
+	home := fakeHome(t)
+	fakePhone(t, nil)
+	plantScans(t, home, 150)
+	run(t, "iphone")
+
+	html := reportHTML(t, home)
+	if strings.Contains(html, "Probably unused") || !strings.Contains(html, "based on 2 iPhone scans") {
+		t.Error("two scans 150 days apart should list nothing, and say how many scans there are")
+	}
+}
+
+func TestIPhoneFirstScanSaysUnusedNeedsHistory(t *testing.T) {
+	home := fakeHome(t)
+	fakePhone(t, nil)
+	run(t, "iphone")
+	html := reportHTML(t, home)
+	if !strings.Contains(html, "once there are 120 days of iPhone scans") || !strings.Contains(html, "1 so far") {
+		t.Error("first scan should say the unused list needs more history")
 	}
 }

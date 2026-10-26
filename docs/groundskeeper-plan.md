@@ -209,6 +209,9 @@ flowchart TD
 - **Sizes need `ReturnAttributes`.** go-ios's `BrowseUserApps` returns no sizes, so Groundskeeper sends its own installation_proxy `Browse` asking for `StaticDiskUsage` and `DynamicDiskUsage`. The app size matches iPhone Storage exactly; the data size follows real changes within minutes but can differ from iPhone Storage (one app read 1.43 GB against 1.17 GB), so the report calls it the size iOS reports over USB.
 - **Per-app size:** the app itself (static) and its documents and data (dynamic). Offline downloads and caches hide in the data size.
 - **Probably unused:** iOS doesn't expose "Last Used" over USB, so each scan saves every app's data size, and an app whose data size hasn't changed in 120 days or more is flagged as probably unused. Apps you open regularly almost always write something, so their size changes. The report labels this as an estimate, suggests confirming the Last Used date in Settings › General › iPhone Storage, and only shows the flag once there are 120 days of history.
+  - "Hasn't changed" means the exact same `DynamicDiskUsage` in every snapshot back from the newest. A snapshot where the app is missing ends the run, so a reinstalled app starts over. The days come from `iphoneUnusedDays`.
+  - The run can't span a gap of more than 30 days between scans, counting the current read as the newest, because sparse scans can't show an app went unused in between. The launchd job doesn't read the phone, so this needs `gk iphone` run at least monthly. The report says how many iPhone scans the list is based on.
+  - The report lists flagged apps in their own "Probably unused" table, largest first, with a shell-quoted `gk clean iphone-apps` hint, so an app outside the 20 largest still shows up.
 - **Never flagged:** Apple's apps and anything in `iphoneKeep`.
 
 **Uninstalling (opt-in):**

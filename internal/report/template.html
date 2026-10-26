@@ -97,6 +97,17 @@ tr.slow td { background: var(--warn-bg); }
 </tbody>
 </table></div>
 <p class="muted">The largest {{len .TopApps}} of {{len .Phone.Apps}} apps. Data is the size iOS reports over USB, which can differ from Settings › General › iPhone Storage. Offline downloads and caches are counted in it. To free an app's space but keep its data, offload it in iPhone Storage.</p>
+{{if .UnusedReady}}{{with .UnusedApps}}
+<h3>Probably unused</h3>
+<div class="table"><table>
+<thead><tr><th>App</th><th>Total</th><th>Data unchanged since</th><th>To remove</th></tr></thead>
+<tbody>
+{{range .}}<tr><td>{{.Name}}<span class="path">{{.BundleID}}</span></td><td class="num">{{bytes .Bytes}}</td><td>{{.Since.Format "2 Jan 2006"}}</td><td><code>{{.Hint}}</code></td></tr>{{end}}
+</tbody>
+</table></div>
+{{end}}<p class="muted">An estimate based on {{.Scans}} iPhone scans: iOS doesn't report when an app was last used over USB, so apps whose data size hasn't changed in {{.UnusedDays}} days, in scans no more than 30 days apart, are listed here. Run gk iphone at least monthly to keep this list useful. Check Last Used in Settings › General › iPhone Storage before removing one. Apple's apps and iphoneKeep are never listed.</p>
+{{else if .UnusedDays}}<p class="muted">Apps that look unused are listed once there are {{.UnusedDays}} days of iPhone scans, no more than 30 days apart. {{.Scans}} so far.</p>
+{{end}}
 {{if .Phone.Shared}}
 <h3>Shared app files</h3>
 <div class="table"><table>

@@ -211,3 +211,28 @@ func TestRenderWithoutIPhoneHasNoSection(t *testing.T) {
 		t.Error("iPhone section shown without iPhone data")
 	}
 }
+
+func TestRenderShowsUnusedIPhoneApps(t *testing.T) {
+	r := sample()
+	r.IPhone = phoneSample()
+	r.IPhone.UnusedDays = 120
+	r.IPhone.UnusedReady = true
+	r.IPhone.Scans = 7
+	r.IPhone.Unused = map[string]time.Time{"com.example.app1": time.Date(2026, 5, 29, 9, 0, 0, 0, time.Local)}
+	html := render(t, r)
+	for _, want := range []string{"Probably unused", "29 May 2026", "gk clean iphone-apps &#39;com.example.app1&#39;", "Last Used", "based on 7 iPhone scans"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+}
+
+func TestRenderSaysUnusedNeedsHistory(t *testing.T) {
+	r := sample()
+	r.IPhone = phoneSample()
+	r.IPhone.UnusedDays = 120
+	html := render(t, r)
+	if !strings.Contains(html, "once there are 120 days of iPhone scans") || strings.Contains(html, "Probably unused") {
+		t.Error("report should say the unused list needs more history")
+	}
+}

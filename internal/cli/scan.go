@@ -123,6 +123,7 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 		if phone, phoneStat, err = readPhone(log, start); err != nil {
 			return err
 		}
+		markUnused(log, home, cfg, phone)
 	}
 	disk, err := scan.DiskUsage(home)
 	if err != nil {

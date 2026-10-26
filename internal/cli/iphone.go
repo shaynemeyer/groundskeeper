@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/shaynemeyer/groundskeeper/internal/config"
 	"github.com/shaynemeyer/groundskeeper/internal/history"
 	"github.com/shaynemeyer/groundskeeper/internal/iphone"
 	"github.com/shaynemeyer/groundskeeper/internal/logging"
@@ -99,4 +100,18 @@ func phoneKind(err error) string {
 		return "not_trusted"
 	}
 	return "read"
+}
+
+// markUnused flags apps whose data size hasn't changed in iphoneUnusedDays
+// of earlier iPhone snapshots.
+func markUnused(log *logging.Logger, home string, cfg config.Config, p *report.Phone) {
+	dir := history.PhoneDir(home)
+	past, err := history.Phones(dir)
+	if err != nil {
+		log.Warn("iphone history unreadable", logging.Path(dir), logging.ErrKind(err))
+	}
+	p.UnusedDays = cfg.IphoneUnusedDays
+	p.Scans = len(past) + 1
+	p.Unused, p.UnusedReady = history.Unused(past, p.Phone, p.Time, cfg.IphoneUnusedDays, cfg.IphoneKeep)
+	log.Info("iphone unused", logging.Count("apps", len(p.Unused)), logging.Flag("ready", p.UnusedReady))
 }

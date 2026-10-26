@@ -61,13 +61,35 @@ const phoneApps = 20
 
 // Phone is the iPhone section: what the latest read of the phone found.
 type Phone struct {
-	Time  time.Time
-	Phone iphone.Phone
+	Time        time.Time
+	Phone       iphone.Phone
+	Unused      map[string]time.Time // bundle ID to when its data size last changed
+	UnusedReady bool                 // enough history to flag apps
+	UnusedDays  int
+	Scans       int // iPhone scans the flag is based on, this one included
 }
 
 // TopApps is the phone's largest apps.
 func (p Phone) TopApps() []iphone.App {
 	return p.Phone.Apps[:min(phoneApps, len(p.Phone.Apps))]
+}
+
+// UnusedApp is an app flagged as probably unused, with a cleanup hint.
+type UnusedApp struct {
+	iphone.App
+	Since time.Time
+	Hint  string
+}
+
+// UnusedApps lists the probably unused apps, largest first.
+func (p Phone) UnusedApps() []UnusedApp {
+	var out []UnusedApp
+	for _, a := range p.Phone.Apps {
+		if since, ok := p.Unused[a.BundleID]; ok {
+			out = append(out, UnusedApp{App: a, Since: since, Hint: "gk clean iphone-apps " + scan.ShellQuote(a.BundleID)})
+		}
+	}
+	return out
 }
 
 // Change is how much an item changed since the last run, or "" when there
