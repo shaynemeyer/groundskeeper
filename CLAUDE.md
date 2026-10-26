@@ -10,6 +10,15 @@ After each build step, add an entry at the top of `docs/build-log.md`: what was 
 
 Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that scans the Mac (and an iPhone connected over USB) for disk space that can be reclaimed and writes an HTML report. launchd runs it on a schedule twice a week.
 
+## Trying changes on the real phone
+
+- Run `make install` before trying a change as `gk`: `gk` is `~/bin/groundskeeper`, and an old install silently lacks new commands and scans. Check with `gk --version`.
+- Run anything that needs Photos access (`--source mac-library`, `doctor`'s Photos check) from Ghostty or Terminal.app. macOS denies it from VS Code's terminal without asking. ImageCaptureCore and go-ios work from anywhere.
+- The phone sends its camera roll as it was when it was connected. Unplug and reconnect it to see photos taken since.
+- With iCloud Photos off, `photosSource` is `device` and photo deletes are permanent. Try `clean photos --apply` on throwaway shots: take a few near-identical ones, skip every other group in `gk review photos`, and accept only theirs.
+- Never overwrite a signed binary in place with `cp`; the copy was killed when run. Install with `make install` or copy to a new path.
+- Inline thumbnails need Ghostty (`TERM_PROGRAM=ghostty`); elsewhere space opens Quick Look.
+
 ## Commands
 
 - `make build`: builds `bin/groundskeeper` with the git version stamped in
