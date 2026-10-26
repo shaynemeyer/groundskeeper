@@ -21,11 +21,15 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - `photos_test.go` replays hand-written helper JSON in `testdata/helper/` (device and library `list`, `analyze`, a `locked` error) and checks the arguments and stdin sent. Mapping `locked` to the wrong kind fails `TestHelperErrorKind`. The fixture guard passes over the new files.
 - `hash --source device` on the phone, for the 3 smallest files (PNG screenshots) and the largest (a 643 MB video): every hash equalled the SHA-256 of the same file read separately over go-ios AFC (`/DCIM/NNNAPPLE/<name>`, read-only) from a scratch program outside the repo, byte counts equal to `list`'s `bytes`. The video crosses 154 chunk boundaries. It took 20 s in all, about 32 MB/s. A made-up ID gave `not-found`; a missing `--source`, an extra `--out` and non-JSON stdin each exit 2. `TestHash` covers the Go side.
 
+### Problems found
+
+- **Library `list` counted every original twice.** After increment 2, the two unedited library JPEGs had `sidecarBytes` equal to `bytes`. A read-only probe outside the repo listed each asset's PhotoKit resources: those two had only their `photo` resource, and the edited screenshot's `photo`, `adjustmentData` and `fullSizePhoto` came to 32,522 + 2,048 + 12,467 = 47,037 bytes, exactly the `sidecarBytes` `list` gave, original included. Cause: increment 2 moved the original's lookup into `originalResource(of:)`, which called `assetResources(for:)` again, and that returns new objects, so `Asset`'s identity check (`!==`) never matched the original. Fixed by having `originalResource(in:)` pick from the array the caller already holds. Afterwards `sidecarBytes` was 0, 0, 14,515 and 0, matching the probe, and the three hashes were unchanged.
+
 ### Open
 
 - Decoding hasn't been run against the real helper's output yet; that comes when `gk iphone` runs it.
 - `hash --source mac-library` ran from a terminal app with Photos access and hashed the 3 oldest library photos (two JPEGs and an edited PNG screenshot) with no failures; from the agent's terminal it answers `denied`. Each hash equalled `shasum -a 256` of the photo's file in the library's `originals` folder (named by the ID's UUID), and each file's size equalled `list`'s `bytes`. The edited screenshot hashed its unedited original, as intended.
-- For the two unedited, non-Live library JPEGs, `list` gives `sidecarBytes` equal to `bytes`, so some other resource the same size as the original is counted, and space estimates may count these photos twice. Each has only one file in `originals`. Not yet proven which resource it is; listing each asset's resource types will show it.
+- An edited library photo's render is reported, as PhotoKit's `fullSizePhoto` resource (12,467 bytes on the edited screenshot), so it's counted in `sidecarBytes`. This answers step 10's open question.
 - Over AFC the camera roll's folders are `100APPLE` to `122APPLE`, while ImageCaptureCore names them `YYYYMM_a`, so AFC paths and helper IDs share only the file name.
 
 ## Step 10: photos-helper

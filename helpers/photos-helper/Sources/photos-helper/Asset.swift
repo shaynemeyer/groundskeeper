@@ -36,7 +36,7 @@ struct Asset: Encodable {
     /// Live Photo video, edits and the edited render, is sidecarBytes.
     init(_ asset: PHAsset, inAlbum: Bool) {
         let resources = PHAssetResource.assetResources(for: asset)
-        let original = originalResource(of: asset)
+        let original = originalResource(in: resources)
         id = asset.localIdentifier
         created = asset.creationDate
         width = asset.pixelWidth
@@ -50,9 +50,11 @@ struct Asset: Encodable {
     }
 }
 
-/// The asset's original photo, video or audio file.
-func originalResource(of asset: PHAsset) -> PHAssetResource? {
-    PHAssetResource.assetResources(for: asset).first { [.photo, .video, .audio].contains($0.type) }
+/// The original photo, video or audio file among an asset's resources. Each
+/// call to assetResources(for:) returns new objects, so callers compare the
+/// result by identity only against the array they passed in.
+func originalResource(in resources: [PHAssetResource]) -> PHAssetResource? {
+    resources.first { [.photo, .video, .audio].contains($0.type) }
 }
 
 extension ICCameraFile {

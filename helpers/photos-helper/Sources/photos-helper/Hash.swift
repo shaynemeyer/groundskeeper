@@ -53,7 +53,7 @@ func hash(_ ids: [String], in files: [ICCameraFile]) async -> Hashes {
 @MainActor
 func hash(_ ids: [String], inLibrary assets: [String: PHAsset]) async -> Hashes {
     await hash(ids, source: "mac-library", find: { assets[$0] }) { asset in
-        guard let original = originalResource(of: asset) else { return nil }
+        guard let original = originalResource(in: PHAssetResource.assetResources(for: asset)) else { return nil }
         return await digest(of: original)
     }
 }
