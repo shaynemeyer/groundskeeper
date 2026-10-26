@@ -53,15 +53,16 @@ func Dir(home string) string {
 
 // SaveScan writes s as YYYY-MM-DDTHHMM.json.
 func SaveScan(dir string, s Snapshot) error {
-	return save(filepath.Join(dir, s.Time.Format(stamp)+".json"), s)
+	return SaveJSON(filepath.Join(dir, s.Time.Format(stamp)+".json"), s)
 }
 
 // SaveClean writes c as clean-YYYY-MM-DDTHHMM.json.
 func SaveClean(dir string, c metrics.Clean) error {
-	return save(filepath.Join(dir, cleanPrefix+c.Time.Format(stamp)+".json"), c)
+	return SaveJSON(filepath.Join(dir, cleanPrefix+c.Time.Format(stamp)+".json"), c)
 }
 
-func save(path string, v any) error {
+// SaveJSON writes v as indented JSON to path, 0600 in a 0700 folder.
+func SaveJSON(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

@@ -22,7 +22,7 @@ func PhoneDir(home string) string {
 
 // SavePhone writes s as YYYY-MM-DDTHHMM.json in dir.
 func SavePhone(dir string, s PhoneSnapshot) error {
-	return save(filepath.Join(dir, s.Time.Format(stamp)+".json"), s)
+	return SaveJSON(filepath.Join(dir, s.Time.Format(stamp)+".json"), s)
 }
 
 // Phones returns the iPhone snapshots in dir, oldest first. Unreadable files
