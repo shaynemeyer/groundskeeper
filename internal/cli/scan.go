@@ -120,18 +120,34 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the report folder is in %s, so reports may leave this Mac. See gk help privacy.\n", where)
 	}
 
+	var source, photosNote string
+	if opts.iphone {
+		if source, photosNote, err = photosSource(cmd, global, home, cfg, opts.dry); err != nil {
+			return err
+		}
+	}
+
 	start := time.Now()
 	log.Info("run started", logging.Flag("dry_run", opts.dry))
 	spin := startSpinner(cmd, global)
 	defer spin.Stop()
 	var phone *report.Phone
-	var phoneStat metrics.Scanner
+	var phoneStats []metrics.Scanner
 	if opts.iphone {
 		spin.Set("Reading iPhone")
-		if phone, phoneStat, err = readPhone(log, start); err != nil {
+		var stat metrics.Scanner
+		if phone, stat, err = readPhone(log, start); err != nil {
 			return err
 		}
+		phoneStats = append(phoneStats, stat)
 		markUnused(log, home, cfg, phone)
+		phone.PhotosNote = photosNote
+		phone.ScreenshotDays = cfg.ScreenshotDays
+		if source != "" {
+			spin.Set("Reading photos (this takes a few minutes)")
+			phone.Photos, stat, phone.PhotosNote = scanPhotos(ctx, log, home, cfg, source, start)
+			phoneStats = append(phoneStats, stat)
+		}
 	}
 	disk, err := scan.DiskUsage(home)
 	if err != nil {
@@ -142,7 +158,7 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	rep.Sections, rep.Skipped, rep.Run.Scanners = runScanners(ctx, log, newScanners(home, cfg, measurer), home, spin)
 	if phone != nil {
 		rep.IPhone = phone
-		rep.Run.Scanners = append([]metrics.Scanner{phoneStat}, rep.Run.Scanners...)
+		rep.Run.Scanners = append(phoneStats, rep.Run.Scanners...)
 	}
 	rep.Run.Start = start
 	rep.Run.DurationMS = time.Since(start).Milliseconds()
@@ -363,6 +379,9 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 	fmt.Fprintf(&b, "Reclaimable  %s (safe items)\n", ui.Bytes(rep.Reclaimable()))
 	if p := rep.IPhone; p != nil {
 		fmt.Fprintf(&b, "iPhone       %s free of %s\n", ui.Bytes(p.Phone.FreeBytes), ui.Bytes(p.Phone.TotalBytes))
+		if p.Photos != nil {
+			fmt.Fprintf(&b, "Photos       %d duplicate groups, %d old screenshots\n", len(p.Photos.Duplicates.Groups), len(p.Photos.OldScreenshots))
+		}
 	}
 	if rep.Deltas.HasPrevious() {
 		fmt.Fprintf(&b, "Since %s  %s free space\n", rep.Deltas.Previous.Format(dateFormat), ui.Delta(rep.Deltas.FreeDelta))
@@ -376,6 +395,9 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 		b.WriteString("Dry run: no files were written.")
 	}
 	fmt.Fprintln(w, ui.Box(b.String(), plain))
+	if p := rep.IPhone; p != nil && p.PhotosNote != "" {
+		fmt.Fprintln(w, p.PhotosNote)
+	}
 
 	var items []scan.Item
 	for _, s := range rep.Sections {

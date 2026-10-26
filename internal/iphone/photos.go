@@ -127,7 +127,7 @@ func (h Helper) call(ctx context.Context, stdin []byte, out any, command string)
 		return helperError(answer.Error)
 	}
 	if runErr != nil {
-		return fmt.Errorf("%w: %s didn't finish", ErrHelper, command)
+		return fmt.Errorf("%w: %s didn't finish: %w", ErrHelper, command, runErr)
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("%w: %s gave an unreadable answer", ErrHelper, command)

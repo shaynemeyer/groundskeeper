@@ -18,8 +18,10 @@ type scripted struct {
 
 func (s *scripted) run(_ context.Context, stdin []byte, _ string, args ...string) ([]byte, error) {
 	var ids []string
-	if err := json.Unmarshal(stdin, &ids); err != nil {
-		return nil, err
+	if len(stdin) > 0 {
+		if err := json.Unmarshal(stdin, &ids); err != nil {
+			return nil, err
+		}
 	}
 	if s.asked == nil {
 		s.asked = map[string][]string{}

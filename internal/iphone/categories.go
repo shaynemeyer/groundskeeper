@@ -32,7 +32,7 @@ func LargestVideos(assets []Asset, n int) []string {
 		}
 	}
 	slices.SortStableFunc(videos, func(a, b Asset) int {
-		return cmp.Or(cmp.Compare(b.Bytes+b.SidecarBytes, a.Bytes+a.SidecarBytes), a.Created.Compare(b.Created))
+		return cmp.Or(cmp.Compare(b.TotalBytes(), a.TotalBytes()), a.Created.Compare(b.Created))
 	})
 	return ids(videos[:min(n, len(videos))])
 }

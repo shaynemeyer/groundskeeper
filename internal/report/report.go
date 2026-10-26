@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,11 +68,90 @@ type Phone struct {
 	UnusedReady bool                 // enough history to flag apps
 	UnusedDays  int
 	Scans       int // iPhone scans the flag is based on, this one included
+	Photos      *iphone.Photos
+	PhotosNote  string // why photos weren't scanned, when they weren't
+	// ScreenshotDays is the age past which a screenshot counts as old.
+	ScreenshotDays int
 }
 
 // TopApps is the phone's largest apps.
 func (p Phone) TopApps() []iphone.App {
 	return p.Phone.Apps[:min(phoneApps, len(p.Phone.Apps))]
+}
+
+// PhotoGroup is a duplicate group as the report shows it.
+type PhotoGroup struct {
+	Taken time.Time // when its oldest photo was taken
+	Count int
+	Exact bool
+	Freed int64 // what deleting the photos not kept would free
+}
+
+// Screenshots sums up the old screenshots.
+type Screenshots struct {
+	Days        int
+	Count       int
+	Bytes       int64
+	First, Last time.Time
+}
+
+// PhotoGroups sums up each duplicate group.
+func (p Phone) PhotoGroups() []PhotoGroup {
+	assets := p.photoAssets()
+	var out []PhotoGroup
+	for _, g := range p.Photos.Duplicates.Groups {
+		group := PhotoGroup{Taken: assets[g.IDs[0]].Created, Count: len(g.IDs), Exact: g.Exact}
+		for _, id := range g.IDs {
+			if !slices.Contains(g.Keep, id) {
+				group.Freed += assets[id].TotalBytes()
+			}
+		}
+		out = append(out, group)
+	}
+	return out
+}
+
+// DuplicateBytes is what deleting every duplicate not kept would free.
+func (p Phone) DuplicateBytes() int64 {
+	var n int64
+	for _, g := range p.PhotoGroups() {
+		n += g.Freed
+	}
+	return n
+}
+
+// OldScreenshots sums up the screenshots older than screenshotDays.
+func (p Phone) OldScreenshots() Screenshots {
+	assets := p.photoAssets()
+	s := Screenshots{Days: p.ScreenshotDays}
+	for _, id := range p.Photos.OldScreenshots {
+		a := assets[id]
+		if s.Count == 0 {
+			s.First = a.Created
+		}
+		s.Count++
+		s.Bytes += a.TotalBytes()
+		s.Last = a.Created
+	}
+	return s
+}
+
+// Videos returns the largest videos, largest first.
+func (p Phone) Videos() []iphone.Asset {
+	assets := p.photoAssets()
+	out := make([]iphone.Asset, len(p.Photos.LargestVideos))
+	for i, id := range p.Photos.LargestVideos {
+		out[i] = assets[id]
+	}
+	return out
+}
+
+func (p Phone) photoAssets() map[string]iphone.Asset {
+	assets := map[string]iphone.Asset{}
+	for _, a := range p.Photos.Assets {
+		assets[a.ID] = a
+	}
+	return assets
 }
 
 // UnusedApp is an app flagged as probably unused, with a cleanup hint.

@@ -311,6 +311,7 @@ sequenceDiagram
 
 - The **scheduled report** includes the iPhone storage and apps section only if the phone happens to be connected and unlocked; otherwise it shows the last saved iPhone data with its date.
 - **Photo scanning never runs on the schedule.** It's heavy, and the Mac library path needs Photos access, which macOS grants to the terminal app you run it from and a background job doesn't have. Run `groundskeeper iphone` from the terminal when you want it.
+- **`gk iphone` scans photos after the phone's storage and apps** (step 11). A failed photo scan (helper missing, phone locked, no Photos access) doesn't fail the run: the report is written with a note saying why photos are missing. The report sums up each duplicate group in one row (when, how many, exact or look-alike, space freed), the old screenshots' count and size, and the 10 largest videos; photos are only shown, as thumbnails, in the review.
 
 ### Spike before building (about a day)
 

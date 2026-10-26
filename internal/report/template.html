@@ -108,6 +108,28 @@ tr.slow td { background: var(--warn-bg); }
 {{end}}<p class="muted">An estimate based on {{.Scans}} iPhone scans: iOS doesn't report when an app was last used over USB, so apps whose data size hasn't changed in {{.UnusedDays}} days, in scans no more than 30 days apart, are listed here. Run gk iphone at least monthly to keep this list useful. Check Last Used in Settings › General › iPhone Storage before removing one. Apple's apps and iphoneKeep are never listed.</p>
 {{else if .UnusedDays}}<p class="muted">Apps that look unused are listed once there are {{.UnusedDays}} days of iPhone scans, no more than 30 days apart. {{.Scans}} so far.</p>
 {{end}}
+{{with .Photos}}
+<h3>Photos</h3>
+<p>{{len .Assets}} photos and videos, read {{if eq .Source "device"}}from the iPhone over USB{{else}}from this Mac's Photos library{{end}}.</p>
+{{end}}{{if .Photos}}{{with .PhotoGroups}}
+<div class="table"><table>
+<thead><tr><th>Duplicates taken</th><th>Photos</th><th>Kind</th><th>Could free</th></tr></thead>
+<tbody>
+{{range .}}<tr><td>{{.Taken.Format "2 Jan 2006 15:04"}}</td><td class="num">{{.Count}}</td><td>{{if .Exact}}Exact copies{{else}}Look alike{{end}}</td><td class="num">{{bytes .Freed}}</td></tr>{{end}}
+</tbody>
+</table></div>
+{{end}}<p class="muted">{{len .PhotoGroups}} groups of duplicates{{if .PhotoGroups}}; deleting the extras would free {{bytes .DuplicateBytes}}{{end}}. Each group keeps its best shot by Vision's aesthetics score. Favorites, edited photos and photos in albums are always kept. Look alike means taken within minutes of each other, or in one burst, and close by Vision's feature print.{{with .Photos.Duplicates.Failed}} {{len .}} photos couldn't be analyzed and were left out.{{end}}</p>
+{{with .OldScreenshots}}{{if .Count}}<p>{{.Count}} screenshots older than {{.Days}} days take {{bytes .Bytes}}, taken {{.First.Format "2 Jan 2006"}} to {{.Last.Format "2 Jan 2006"}}.</p>{{end}}{{end}}
+{{with .Videos}}
+<div class="table"><table>
+<thead><tr><th>Largest videos</th><th>Taken</th><th>Size</th></tr></thead>
+<tbody>
+{{range .}}<tr><td><span class="path">{{.ID}}</span></td><td>{{.Created.Format "2 Jan 2006"}}</td><td class="num">{{bytes .TotalBytes}}</td></tr>{{end}}
+</tbody>
+</table></div>
+{{end}}{{end}}{{with .PhotosNote}}<h3>Photos</h3>
+<p class="muted">{{.}}</p>
+{{end}}
 {{if .Phone.Shared}}
 <h3>Shared app files</h3>
 <div class="table"><table>

@@ -6,6 +6,10 @@ import "math"
 // photo or one in an album. These are only known for the Mac library.
 func (a Asset) Protected() bool { return a.Favorite || a.Edited || a.InAlbum }
 
+// TotalBytes is the asset's size with its sidecar files, such as a Live
+// Photo's video and edits: what deleting it frees.
+func (a Asset) TotalBytes() int64 { return a.Bytes + a.SidecarBytes }
+
 // Keep returns which of a group's IDs to keep, in the group's order: every
 // protected asset, plus the best shot. The best shot has the highest
 // aesthetics score, chosen among the protected assets when there are any,

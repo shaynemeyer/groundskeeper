@@ -25,16 +25,21 @@ func newIPhoneCmd(global *globalOptions) *cobra.Command {
 		GroupID: groupReport,
 		Short:   "Scan a connected iPhone and add it to the report",
 		Long: `Reads the iPhone connected over USB: free space, every app's size and data,
-and the files apps share with the Mac. Then scans the Mac as gk scan does
-and writes the report with an iPhone section.
+and the files apps share with the Mac. Then it reads the photos, from the
+phone or from this Mac's Photos library, and finds duplicates, screenshots
+older than screenshotDays and the largest videos; this takes a few
+minutes. Last, it scans the Mac as gk scan does and writes the report with
+an iPhone section.
 
-The iPhone must trust this Mac. If it asks, unlock it and tap Trust.
+The first run asks whether iCloud Photos is on, which decides where photos
+are read. The iPhone must trust this Mac. If it asks, unlock it and tap
+Trust.
 
 Safety: read-only. Nothing on the phone or the Mac is changed or deleted.
 Data sizes are what iOS reports over USB, which can differ from
 Settings › General › iPhone Storage.
 
-See also: gk scan, gk help privacy`,
+See also: gk scan, gk setup photos, gk help privacy`,
 		Example: `  # Scan the iPhone and the Mac, and write the report
   gk iphone
 
