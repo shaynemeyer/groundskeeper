@@ -2,6 +2,24 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 11: photo grouping, review and clean photos
+
+### Built
+
+- **Increment 1:** `internal/iphone/photos.go` runs `photos-helper` (`Helper{Path, Source, Run}`) and decodes `list` into `[]Asset` and `analyze` into `[]Analysis` plus `[]Failure`. An `{"error": kind}` answer becomes `ErrNoDevice`, `ErrLocked`, `ErrDenied` or `ErrTimeout`; a helper that dies without one is `ErrHelper`. `Distance` is Vision's feature-print distance, the squared Euclidean distance of the float32 vectors (step 10).
+
+### Decisions
+
+- **The helper's stdout is decoded even when it exits 1,** because that's where its error kind is. Its stderr is never read.
+
+### Verified
+
+- `photos_test.go` replays hand-written helper JSON in `testdata/helper/` (device and library `list`, `analyze`, a `locked` error) and checks the arguments and stdin sent. Mapping `locked` to the wrong kind fails `TestHelperErrorKind`. The fixture guard passes over the new files.
+
+### Open
+
+- Decoding hasn't been run against the real helper's output yet; that comes when `gk iphone` runs it.
+
 ## Step 10: photos-helper
 
 ### Built
