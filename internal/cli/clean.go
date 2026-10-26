@@ -32,9 +32,12 @@ cleaned on the schedule; you run these yourself.
 Safety: every clean command is a dry run unless you add --apply, and every
 action is written to ~/Library/Logs/groundskeeper.log.`,
 		Example: `  # See what clearing browser caches would save
-  gk clean browsers`,
+  gk clean browsers
+
+  # See what uninstalling an iPhone app would free
+  gk clean iphone-apps com.example.game`,
 	}
-	cmd.AddCommand(newCleanBrowsersCmd(global))
+	cmd.AddCommand(newCleanBrowsersCmd(global), newCleanIPhoneAppsCmd(global))
 	return cmd
 }
 

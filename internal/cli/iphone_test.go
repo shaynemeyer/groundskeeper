@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shaynemeyer/groundskeeper/internal/clean"
 	"github.com/shaynemeyer/groundskeeper/internal/history"
 	"github.com/shaynemeyer/groundskeeper/internal/iphone"
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
@@ -92,5 +93,95 @@ func TestIPhoneDrySavesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(stateDir(home)); !os.IsNotExist(err) {
 		t.Error("state directory exists after --dry")
+	}
+}
+
+// fakeUninstaller records uninstalls instead of reaching a phone.
+func fakeUninstaller(t *testing.T) *[]string {
+	t.Helper()
+	var removed []string
+	phoneUninstaller = func(id string) error { removed = append(removed, id); return nil }
+	t.Cleanup(func() { phoneUninstaller = iphone.Uninstall })
+	return &removed
+}
+
+// runWithInput runs the CLI with stdin set to input.
+func runWithInput(t *testing.T, input string, args ...string) string {
+	t.Helper()
+	var out bytes.Buffer
+	root := NewRoot()
+	root.SetArgs(args)
+	root.SetIn(strings.NewReader(input))
+	root.SetOut(&out)
+	root.SetErr(&out)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("%v: %v\n%s", args, err, out.String())
+	}
+	return out.String()
+}
+
+func TestCleanIPhoneAppsNeedsAScan(t *testing.T) {
+	fakeHome(t)
+	removed := fakeUninstaller(t)
+	root := NewRoot()
+	root.SetArgs([]string{"clean", "iphone-apps", "com.example.app1", "--apply"})
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "run gk iphone first") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(*removed) > 0 {
+		t.Errorf("uninstalled %v", *removed)
+	}
+}
+
+func TestCleanIPhoneAppsDryRunByDefault(t *testing.T) {
+	fakeHome(t)
+	fakePhone(t, nil)
+	run(t, "iphone")
+	removed := fakeUninstaller(t)
+	out := runWithInput(t, "y\n", "clean", "iphone-apps", "com.example.app1")
+	if !strings.Contains(out, clean.WouldUninstall) || !strings.Contains(out, "Dry run") || strings.Contains(out, "[y/N]") {
+		t.Errorf("output = %q", out)
+	}
+	if len(*removed) > 0 {
+		t.Errorf("dry run uninstalled %v", *removed)
+	}
+}
+
+func TestCleanIPhoneAppsApplyAsksFirst(t *testing.T) {
+	fakeHome(t)
+	fakePhone(t, nil)
+	run(t, "iphone")
+	removed := fakeUninstaller(t)
+	out := runWithInput(t, "n\ny\n", "clean", "iphone-apps", "com.example.app1", "com.example.app2", "com.apple.Pages", "--apply")
+	if !slices.Equal(*removed, []string{"com.example.app2"}) {
+		t.Errorf("uninstalled %v, want only com.example.app2", *removed)
+	}
+	for _, want := range []string{"deleted permanently", "offload", clean.Declined, clean.Uninstalled, "one of Apple's apps"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestCleanIPhoneAppsNoAnswerKeepsApp(t *testing.T) {
+	fakeHome(t)
+	fakePhone(t, nil)
+	run(t, "iphone")
+	removed := fakeUninstaller(t)
+	runWithInput(t, "", "clean", "iphone-apps", "com.example.app1", "--apply")
+	if len(*removed) > 0 {
+		t.Errorf("uninstalled %v with no answer", *removed)
+	}
+}
+
+func TestCleanIPhoneAppsCompletesSnapshotIDs(t *testing.T) {
+	fakeHome(t)
+	fakePhone(t, nil)
+	run(t, "iphone")
+	out := run(t, "__complete", "clean", "iphone-apps", "")
+	if !strings.Contains(out, "com.example.app1\t") || strings.Contains(out, "com.apple.") {
+		t.Errorf("completions = %q", out)
 	}
 }

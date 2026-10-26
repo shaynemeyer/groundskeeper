@@ -1,5 +1,6 @@
 // Package iphone reads storage, apps and shared files from an iPhone over USB
-// with go-ios. It only reads; uninstalling lives in internal/clean.
+// with go-ios. Uninstall is the only call that changes the phone; the checks
+// that guard it live in internal/clean.
 package iphone
 
 import (
@@ -11,6 +12,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/afc"
 	"github.com/danielpaulus/go-ios/ios/house_arrest"
+	"github.com/danielpaulus/go-ios/ios/installationproxy"
 )
 
 // Errors are reported by kind. go-ios's own messages can hold the device's
@@ -19,6 +21,7 @@ var (
 	ErrNoDevice   = errors.New("no iPhone connected over USB")
 	ErrNotTrusted = errors.New("iPhone hasn't trusted this Mac")
 	ErrRead       = errors.New("couldn't read the iPhone")
+	ErrUninstall  = errors.New("the iPhone didn't uninstall the app")
 )
 
 func init() {
@@ -180,4 +183,22 @@ func sharedFiles(device ios.DeviceEntry, bundleID string) ([]map[string]any, err
 		return nil
 	})
 	return files, err
+}
+
+// Uninstall removes an app and its data from the first iPhone on USB. The
+// phone shows no prompt, and the data can't be recovered.
+func Uninstall(bundleID string) error {
+	device, err := connect()
+	if err != nil {
+		return err
+	}
+	conn, err := installationproxy.New(device)
+	if err != nil {
+		return readErr("installation_proxy", err)
+	}
+	defer conn.Close()
+	if err := conn.Uninstall(bundleID); err != nil {
+		return ErrUninstall
+	}
+	return nil
 }

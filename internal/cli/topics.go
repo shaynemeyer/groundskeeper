@@ -23,6 +23,10 @@ Only clean commands remove things, and only when you run them:
     follows a symlink outside the browser's own folders.
   - Anything moved goes to the Trash, so you can put it back until you
     empty it.
+  - clean iphone-apps only takes bundle IDs from the last gk iphone scan,
+    refuses Apple's apps and iphoneKeep, and asks before each app. An
+    uninstalled app's data is gone for good; offload it in iPhone Storage
+    to keep the data instead.
 
 The only files groundskeeper deletes on its own are its own snapshots in
 ~/.local/state/groundskeeper, after six months.

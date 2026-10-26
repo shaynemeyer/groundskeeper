@@ -216,6 +216,8 @@ flowchart TD
 - It's a dry run unless `--apply` is given. With `--apply`, it asks for confirmation for each app, showing the app's name and the data that will be lost.
 - Uninstalling deletes the app's data permanently, unlike the Trash. The confirmation says so, and recommends **offloading in iPhone Storage** instead for apps whose data you want to keep. Offloading isn't available over USB: iOS 27 answers installation_proxy's `Archive` and `LookupArchives` with `UnknownCommand`.
 - The phone shows no prompt when an app is uninstalled; its icon just disappears.
+- The confirmation reads a `y` or `yes` from stdin. Anything else, including no input (as under launchd), keeps the app.
+- Uninstalls are logged but not saved as clean snapshots, because those count space freed on the Mac for the report's Run details.
 
 ### Shared app files
 
