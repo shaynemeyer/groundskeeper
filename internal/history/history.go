@@ -38,11 +38,12 @@ func Key(section, label, path string) string {
 
 // Snapshot is one scan's result.
 type Snapshot struct {
-	Time  time.Time   `json:"time"`
-	Free  int64       `json:"free"`
-	Total int64       `json:"total"`
-	Items []Item      `json:"items"`
-	Run   metrics.Run `json:"run"`
+	Time    time.Time   `json:"time"`
+	Free    int64       `json:"free"`
+	Total   int64       `json:"total"`
+	Items   []Item      `json:"items"`
+	Skipped []string    `json:"skipped"` // paths that couldn't be read; nil in snapshots from before this was recorded
+	Run     metrics.Run `json:"run"`
 }
 
 // Dir is where snapshots live.
@@ -161,6 +162,7 @@ type Deltas struct {
 	FreeDelta int64
 	ByKey     map[string]int64
 	Growing   []Change // largest growth first, at most five
+	NewSkip   int      // paths skipped now that weren't skipped last time
 }
 
 // HasPrevious reports whether there was an earlier run to compare with.
@@ -186,6 +188,13 @@ func Compare(prev *Snapshot, cur Snapshot) Deltas {
 		d.ByKey[key] = delta
 		if delta > 0 {
 			d.Growing = append(d.Growing, Change{Item: it, Delta: delta, New: !existed})
+		}
+	}
+	if prev.Skipped != nil {
+		for _, p := range cur.Skipped {
+			if !slices.Contains(prev.Skipped, p) {
+				d.NewSkip++
+			}
 		}
 	}
 	slices.SortFunc(d.Growing, func(a, b Change) int { return cmp.Compare(b.Delta, a.Delta) })

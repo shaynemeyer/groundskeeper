@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -43,5 +44,16 @@ func TestStyledTableHasBorder(t *testing.T) {
 	got := Table([]string{"Name"}, [][]string{{"npm"}}, nil, false)
 	if !strings.Contains(got, "╭") || !strings.Contains(got, "npm") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestDevNullIsNotATerminal(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if IsTerminal(f) {
+		t.Fatal("/dev/null, which launchd gives a job as stdin, counted as a terminal")
 	}
 }

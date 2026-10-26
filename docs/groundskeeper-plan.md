@@ -389,7 +389,7 @@ Help topics
 
 - Running `groundskeeper` with no subcommand runs `scan`, so launchd and `gk` stay short.
 - Groups use Cobra's [command groups](https://pkg.go.dev/github.com/spf13/cobra#Group). Help topics are commands with no `Run`, which Cobra lists under "Additional help topics" ([docs](https://cobra.dev/docs/how-to-guides/working-with-commands/)).
-- `doctor` checks, and explains how to fix: Full Disk Access, whether the LaunchAgent is loaded and its next run, the iOS 17 tunnel, Photos access, whether `photos-helper` is installed, whether FileVault is on, and whether `outputDir` is in a synced folder.
+- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, and whether `outputDir` is in a synced folder. The iOS 17 tunnel, Photos access and `photos-helper` checks are added with iPhone mode (steps 9 to 11). Warnings exit 0; a failed check makes `doctor` exit with an error.
 
 ### Help content
 
@@ -492,7 +492,7 @@ Each run records metrics in its snapshot, so they share the snapshot's pruning a
 
 | Metric | Detail |
 |---|---|
-| Run | Start time, total duration, command, and whether stdin was a terminal (launchd runs and pipes aren't). A failed scanner is recorded on that scanner's row rather than as an exit status, because the run still finishes and saves a snapshot. |
+| Run | Start time, total duration, command, and whether stdin is a terminal, checked with `isatty` (`golang.org/x/term`). launchd gives jobs `/dev/null`, which is a character device but not a terminal, so a plain character-device check gets this wrong. A failed scanner is recorded on that scanner's row rather than as an exit status, because the run still finishes and saves a snapshot. |
 | Per scanner | Duration, items found, bytes measured, paths skipped, timeouts, errors |
 | Size engine | Files and folders visited, hardlinks deduped |
 | Disk | Free and total space (already in the snapshot) |
@@ -507,7 +507,7 @@ Cleanup runs write a small snapshot of their own (`clean-YYYY-MM-DDTHHMM.json`) 
 - **`groundskeeper stats`:** the same numbers in the terminal, as a Lip Gloss table, for the last run or with `--runs N` for trends (for example, a scanner that keeps getting slower). `--json` prints the raw metrics.
 - **`groundskeeper logs`:** shows recent log entries, formatted and colored. Filter with `--level warn`, `--run last`, `--cmd clean`, or follow live with `--follow`. `--json` prints raw lines.
 - **`groundskeeper doctor`:** reports the last scheduled run's time and status, so a schedule that stopped running gets noticed.
-- **Notification:** if a scheduled run had errors or skipped paths it didn't skip last time, the notification says so, for example "118 GB free · 2 scanners had problems · see report".
+- **Notification:** if a scheduled run had errors or skipped paths it didn't skip last time, the notification says so, for example "Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy. 2 scanners had problems; see the report." Snapshots from before skipped paths were recorded count as unknown, not as "nothing skipped".
 
 ## Size engine
 
@@ -534,7 +534,7 @@ Cleanup runs write a small snapshot of their own (`clean-YYYY-MM-DDTHHMM.json`) 
   - Sections: Caches, AI models, Build artifacts, Toolchains, Containers, Downloads, Browsers, Unused apps, iPhone, Skipped paths, Run details.
   - Each row shows its path, size, change, safety tag and suggested command.
   - Supports light and dark mode and fits mobile widths.
-- **Notification:** posted through `osascript display notification`, for example "118 GB free · ~35 GB reclaimable · report ready".
+- **Notification:** posted by `scan --notify` (the schedule passes it) through `osascript`, with the text passed as arguments to `on run argv`, for example "Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy." It appears as a Script Editor notification.
 - **Flags** (on `scan`; `--config` is global):
   - `--open`: opens the report after it's generated
   - `--config <path>`: uses a different config file
@@ -572,7 +572,9 @@ A LaunchAgent at `~/Library/LaunchAgents/com.lot86.groundskeeper.plist`:
 - `StartCalendarInterval` holds two entries: Monday (`Weekday 1`) and Thursday (`Weekday 4`) at 09:00. The days and time are adjustable.
 - If the Mac is asleep at the scheduled time, launchd runs the job when it wakes. cron doesn't do this, which is why launchd is used.
 - The tool writes its own log to `~/Library/Logs/groundskeeper.log`. The plist's `StandardOutPath` and `StandardErrorPath` point to `~/Library/Logs/groundskeeper.launchd.log`.
-- `ProgramArguments` is `~/bin/groundskeeper`.
+- `ProgramArguments` is `~/bin/groundskeeper scan --notify`.
+- No `ProcessType`: launchd's default applies light resource limits. `Background` was tried first and throttled disk reads so much (a 26 s scan took 7 minutes) that folders hit the two-minute timeout and the report was incomplete.
+- The template is `launchd/com.lot86.groundskeeper.plist` with a `__HOME__` placeholder that `make install` fills in, so no personal path is committed.
 
 **macOS privacy.** Downloads, Documents and Desktop are privacy-protected, so a background job can't read them by default. Either grant Full Disk Access to `~/bin/groundskeeper` in System Settings → Privacy & Security, or the tool skips those folders and lists them under Skipped paths.
 
@@ -676,7 +678,7 @@ groundskeeper/
 
 ## Open decisions
 
-- Schedule: Monday and Thursday at 9:00 AM, or different days or time?
-- Whether to send a notification on every run, or only when free space drops below a threshold such as 75 GB.
+- ~~Schedule~~: decided, Monday and Thursday at 9:00 AM (edit the plist and reinstall to change).
+- ~~Notification frequency~~: decided, every scheduled run; interactive runs only notify with `--notify`.
 - Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).
 - Whether to keep the libimobiledevice fallback, or rely on go-ios alone if the spike goes well.

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- make install replaces __HOME__ with your home folder. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.lot86.groundskeeper</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__HOME__/bin/groundskeeper</string>
+		<string>scan</string>
+		<string>--notify</string>
+	</array>
+	<!-- Mondays and Thursdays at 09:00. Weekday 0 or 7 is Sunday. -->
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Weekday</key>
+			<integer>1</integer>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Weekday</key>
+			<integer>4</integer>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
+	<!-- No ProcessType: launchd's default applies light resource limits.
+	     Background throttled disk reads so hard that folders hit the
+	     two-minute timeout and the report was incomplete. -->
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/groundskeeper.launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/groundskeeper.launchd.log</string>
+</dict>
+</plist>

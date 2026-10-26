@@ -15,9 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shaynemeyer/groundskeeper/internal/config"
+	"github.com/shaynemeyer/groundskeeper/internal/doctor"
 	"github.com/shaynemeyer/groundskeeper/internal/history"
 	"github.com/shaynemeyer/groundskeeper/internal/logging"
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
+	"github.com/shaynemeyer/groundskeeper/internal/notify"
 	"github.com/shaynemeyer/groundskeeper/internal/report"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
@@ -38,13 +40,15 @@ var (
 )
 
 type scanOptions struct {
-	open bool
-	dry  bool
+	open   bool
+	dry    bool
+	notify bool
 }
 
 func addScanFlags(cmd *cobra.Command, opts *scanOptions) {
 	cmd.Flags().BoolVar(&opts.open, "open", false, "open the report after it's written")
 	cmd.Flags().BoolVar(&opts.dry, "dry", false, "print a summary without writing any files")
+	cmd.Flags().BoolVar(&opts.notify, "notify", false, "post a macOS notification when done (the schedule uses this)")
 }
 
 func newScanCmd(global *globalOptions) *cobra.Command {
@@ -57,7 +61,9 @@ func newScanCmd(global *globalOptions) *cobra.Command {
 ~/Reports/groundskeeper/YYYY-MM-DD.html and latest.html, and prints a summary.
 
 Safety: read-only. Scan only measures sizes, never reads file contents, and
-never deletes anything. Suggested commands in the report are for you to run.`,
+never deletes anything. Suggested commands in the report are for you to run.
+
+See also: gk help safety, gk history, gk stats`,
 		Example: `  # Scan and write the report
   gk scan
 
@@ -103,6 +109,10 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 		return err
 	}
 	defer closeLog.Close()
+	if where := doctor.SyncedFolder(config.Expand(cfg.OutputDir, home), home); where != "" {
+		log.Warn("report folder syncs off this Mac", logging.Path(cfg.OutputDir))
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the report folder is in %s, so reports may leave this Mac. See gk help privacy.\n", where)
+	}
 
 	start := time.Now()
 	log.Info("run started", logging.Flag("dry_run", opts.dry))
@@ -131,6 +141,9 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	}
 	log.Info("run finished", logging.Duration(time.Since(start)), logging.Bytes(rep.Reclaimable()))
 	printSummary(cmd.OutOrStdout(), rep, path)
+	if opts.notify && !opts.dry {
+		sendNotification(ctx, log, rep)
+	}
 
 	if opts.open && path != "" {
 		return exec.CommandContext(ctx, "open", path).Run()
@@ -237,7 +250,10 @@ func addHistory(log *logging.Logger, home string, rep *report.Report, dry bool) 
 }
 
 func snapshotOf(rep report.Report) history.Snapshot {
-	s := history.Snapshot{Time: rep.Generated, Free: rep.Disk.Free, Total: rep.Disk.Total, Run: rep.Run}
+	s := history.Snapshot{Time: rep.Generated, Free: rep.Disk.Free, Total: rep.Disk.Total, Run: rep.Run, Skipped: []string{}}
+	for _, sk := range rep.Skipped {
+		s.Skipped = append(s.Skipped, sk.Path)
+	}
 	for _, sec := range rep.Sections {
 		for _, it := range sec.Items {
 			s.Items = append(s.Items, history.Item{Section: it.Section, Label: it.Label, Path: it.Path, Bytes: it.Bytes})
@@ -253,6 +269,26 @@ func commandName(cmd *cobra.Command) string {
 		return "scan"
 	}
 	return strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" ")
+}
+
+// sendNotification posts the end-of-scan notification. A failure is
+// logged, not returned, because the report was still written.
+func sendNotification(ctx context.Context, log *logging.Logger, rep report.Report) {
+	run := toolRunner
+	if run == nil {
+		run = scan.RunTool
+	}
+	msg := notify.Message(notify.Summary{
+		Free:        rep.Disk.Free,
+		Reclaimable: rep.Reclaimable(),
+		Failed:      rep.Run.Errors(),
+		NewSkipped:  rep.Deltas.NewSkip,
+	})
+	if err := notify.Send(ctx, notify.Runner(run), msg); err != nil {
+		log.Warn("notification failed", logging.ErrKind(err))
+		return
+	}
+	log.Info("notification sent", logging.Count("failed_scanners", rep.Run.Errors()), logging.Count("new_skipped", rep.Deltas.NewSkip))
 }
 
 // changeNote is " (+2.1 GB)" for an item that changed since the last run,

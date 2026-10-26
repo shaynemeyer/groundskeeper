@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"charm.land/lipgloss/v2"
+	"golang.org/x/term"
 )
 
 // ANSI colors follow the terminal's own theme in light and dark mode.
@@ -26,10 +27,10 @@ func Plain(w io.Writer) bool {
 	return !ok || !IsTerminal(f)
 }
 
-// IsTerminal reports whether f is a terminal rather than a file or pipe.
+// IsTerminal reports whether f is a terminal. A character device isn't
+// enough: launchd gives jobs /dev/null, which is one but isn't a terminal.
 func IsTerminal(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // Tag renders a safety tag: safe in green, review in yellow, keep in gray.

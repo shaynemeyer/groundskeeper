@@ -4,7 +4,7 @@
 
 <p align="center">Keep your Mac's disk, and a connected iPhone, free of clutter.</p>
 
-> **Status:** early development. `scan` covers every Mac scanner in the plan, `clean browsers` moves browser caches to the Trash, and `history`, `stats` and `logs` show trends and run details. Scheduling comes next. See the [implementation plan](docs/groundskeeper-plan.md) for what's next.
+> **Status:** early development. `scan` covers every Mac scanner in the plan, `make install` schedules it for Monday and Thursday mornings with a notification, `clean browsers` moves browser caches to the Trash, and `gk doctor` checks the setup. iPhone mode comes next. See the [implementation plan](docs/groundskeeper-plan.md) for what's next.
 
 Groundskeeper (`groundskeeper`, alias `gk`) is a Lot86 terminal tool for macOS. Twice a week it scans for space you can reclaim and writes an HTML report. It looks for:
 

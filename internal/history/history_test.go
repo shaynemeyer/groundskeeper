@@ -111,6 +111,24 @@ func TestCompare(t *testing.T) {
 	}
 }
 
+func TestCompareCountsNewlySkippedPaths(t *testing.T) {
+	prev := snap(at(22, 9), 1)
+	prev.Skipped = []string{"/h/Library/Mail", "/h/Downloads"}
+	cur := snap(at(26, 9), 1)
+	cur.Skipped = []string{"/h/Library/Mail", "/h/Documents", "/h/Desktop"}
+
+	if d := Compare(&prev, cur); d.NewSkip != 2 {
+		t.Fatalf("new skipped = %d, want 2", d.NewSkip)
+	}
+	if d := Compare(nil, cur); d.NewSkip != 0 {
+		t.Fatalf("first run counts %d new skipped paths", d.NewSkip)
+	}
+	old := snap(at(20, 9), 1) // saved before skipped paths were recorded
+	if d := Compare(&old, cur); d.NewSkip != 0 {
+		t.Fatalf("snapshot without a skipped list counts %d new skipped paths", d.NewSkip)
+	}
+}
+
 func TestCompareKeepsTopFiveAndHandlesFirstRun(t *testing.T) {
 	var prevItems, curItems []Item
 	for i := range 8 {

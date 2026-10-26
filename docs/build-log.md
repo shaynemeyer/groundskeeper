@@ -2,6 +2,58 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 7: Schedule, notification, doctor, help topics and completion
+
+### Built
+
+- **`launchd/com.lot86.groundskeeper.plist`:** runs `~/bin/groundskeeper scan --notify` on Mondays and Thursdays at 09:00, logging to `~/Library/Logs/groundskeeper.launchd.log`. `make install` fills in `__HOME__`, lints the plist with `plutil`, and loads it with `launchctl bootstrap`; `make uninstall` unloads it with `bootout` and removes it.
+- **`internal/notify`:** a notification in Rook's voice ("Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy."), adding failed scanners and newly unreadable paths when there are any. The text goes to `osascript` as `argv`, never into the script.
+- **`gk doctor` (new Setup group):** checks the installed binary, Full Disk Access, the schedule and its next run, the last scheduled run, FileVault, and whether the report folder syncs. Each problem comes with its fix.
+- **Help topics** `safety`, `schedule` and `privacy`, grouped under "Help topics", with "See also" lines on `scan`, `clean browsers` and `doctor`.
+- `--browser` completes only browsers that have folders on this Mac.
+- `scan` warns when the report folder syncs off this Mac.
+- Snapshots record skipped paths, so a scheduled run can report newly unreadable ones.
+
+### Decisions
+
+- The schedule passes `--notify`, rather than notifying based on whether the run looks interactive.
+- Notifications on every scheduled run, Mon and Thu 09:00. This settles two of the plan's open decisions.
+- iPhone-related `doctor` checks (tunnel, Photos access, `photos-helper`) wait for iPhone mode.
+
+### Problems found and fixed (all from a real launchd run started with `launchctl kickstart`)
+
+- **Scheduled runs were recorded as interactive.**
+  - Root cause: `ui.IsTerminal` only checked for a character device, and launchd's stdin is `/dev/null`, which is a character device (`crw-rw-rw-`) but not a terminal (`isatty` false).
+  - Fix: a failing test first, then `term.IsTerminal` from `golang.org/x/term`.
+  - Correction to step 6: there I wrote that `go test` runs with a terminal as stdin. More likely its stdin was also `/dev/null`, misjudged by the same bug.
+- **Scheduled report incomplete.**
+  - With `ProcessType` `Background` (my addition, not in the plan), the run took about 7 minutes instead of 26 s.
+  - `~/Library/Caches/com.apple.Music` and `com.apple.TV` hit the two-minute folder timeout.
+  - Fix: remove `ProcessType` (launchd's default is light limits). Re-run: about 30 s, 0 timeouts.
+- **The notification reported "26 new paths couldn't be read"** because older snapshots had no skipped list. Fix: snapshots always write the list, and a missing one counts as unknown (with a test).
+- **`doctor` overstated Full Disk Access:** it said Downloads would be skipped, but Downloads was readable. Downloads, Documents and Desktop are under macOS's separate "Files and Folders" permission.
+- **Fang listed the help topics under the generic Commands heading,** so they got their own group.
+
+### Verified
+
+- On a real Mac:
+  - `make install` loaded the agent; `kickstart` ran it with exit code 0.
+  - The snapshot shows `interactive: false`, Podman was found under launchd's `PATH`, and the notification was sent.
+  - `gk doctor` reports the next run (Mon 26 Oct 09:00).
+- `fdesetup status` works without `sudo`.
+- A real `osascript` notification whose text tried `do shell script "touch …"` created no file.
+- Tests:
+  - the plist template lints, runs only `scan --notify`, and contains no hardcoded home
+  - `doctor` (schedule states, next run, FileVault on and off, last scheduled run, synced folders including symlinks)
+  - notifications (text and argument handling), `--notify` and dry runs
+  - help topics and `--browser` completion
+
+### Open
+
+- Notifications come from Script Editor; if they don't appear, allow Script Editor in System Settings > Notifications.
+- Full Disk Access for the schedule has to be granted to `~/bin/groundskeeper` by hand. `doctor` can only test the process running it.
+- `make install` prints a harmless "Error 3 (ignored)" when there's no earlier job to unload.
+
 ## Between steps 6 and 7: on-demand install
 
 - `make install` builds and copies the binary to `~/bin`, adds the `gk` symlink, and writes zsh completion for both names to `~/.zsh/completions/_groundskeeper` (the `#compdef` and `compdef` lines are rewritten to include `gk`). `make uninstall` removes exactly those three files. The LaunchAgent comes in step 7.

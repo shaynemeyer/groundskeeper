@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -64,8 +65,8 @@ func run(t *testing.T, args ...string) string {
 func TestEveryCommandHasHelpContent(t *testing.T) {
 	var check func(*cobra.Command)
 	check = func(c *cobra.Command) {
-		if c.Short == "" || c.Long == "" || c.Example == "" {
-			t.Errorf("%q needs Short, Long and Example", c.CommandPath())
+		if c.Short == "" || c.Long == "" || (c.Runnable() && c.Example == "") {
+			t.Errorf("%q needs Short, Long, and Example if runnable", c.CommandPath())
 		}
 		for _, sub := range c.Commands() {
 			if sub.Name() != "help" && sub.Name() != "completion" {
@@ -419,6 +420,95 @@ func TestLogsFiltersAndJSON(t *testing.T) {
 		if !json.Valid([]byte(line)) || !strings.Contains(line, `"cmd":"clean browsers"`) {
 			t.Errorf("--json --run last line %q", line)
 		}
+	}
+}
+
+// fakeOsascript records notification text.
+func fakeOsascript(t *testing.T) *[]string {
+	t.Helper()
+	var sent []string
+	toolRunner = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name == "osascript" {
+			sent = append(sent, args[len(args)-2])
+			return nil, nil
+		}
+		return nil, exec.ErrNotFound
+	}
+	return &sent
+}
+
+func TestNotifyPostsOneNotification(t *testing.T) {
+	fakeHome(t)
+	sent := fakeOsascript(t)
+	run(t, "scan", "--notify")
+
+	if len(*sent) != 1 || !strings.HasPrefix((*sent)[0], "Rook's report is ready:") {
+		t.Fatalf("notifications = %q", *sent)
+	}
+}
+
+func TestNoNotificationWithoutFlagOrOnDryRun(t *testing.T) {
+	fakeHome(t)
+	sent := fakeOsascript(t)
+	run(t, "scan")
+	run(t, "scan", "--dry", "--notify")
+
+	if len(*sent) != 0 {
+		t.Fatalf("notifications = %q", *sent)
+	}
+}
+
+func TestHelpTopics(t *testing.T) {
+	fakeHome(t)
+	out := run(t, "--help")
+	for _, topic := range []string{"safety", "schedule", "privacy"} {
+		if !strings.Contains(out, topic) {
+			t.Errorf("help doesn't list %s", topic)
+		}
+	}
+	if out := run(t, "help", "privacy"); !strings.Contains(out, "Full Disk Access") || !strings.Contains(out, "Time Machine") {
+		t.Errorf("privacy topic = %q", out)
+	}
+}
+
+func TestDoctorReportsFixes(t *testing.T) {
+	fakeHome(t)
+	var out bytes.Buffer
+	root := NewRoot()
+	root.SetArgs([]string{"doctor"})
+	root.SetOut(&out)
+	root.SetErr(&out)
+	err := root.ExecuteContext(context.Background())
+
+	if err == nil || !strings.Contains(err.Error(), "check(s) failed") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, want := range []string{"fail  Installed binary", "Fix: Run make install", "LaunchAgent not installed", "Report folder"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("doctor output missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestScanWarnsAboutSyncedReportFolder(t *testing.T) {
+	home := fakeHome(t)
+	cfg := filepath.Join(home, ".config/groundskeeper/config.json")
+	if err := os.WriteFile(cfg, []byte(`{"minSizeMB": 0, "outputDir": "~/Documents/gk-reports"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(t, "scan", "--dry"); !strings.Contains(out, "Warning: the report folder is in Documents") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestBrowserFlagCompletesInstalledBrowsers(t *testing.T) {
+	home := fakeHome(t)
+	chromeCache(t, home)
+	out := run(t, "__complete", "clean", "browsers", "--browser", "")
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if !slices.Contains(lines, "chrome") || slices.Contains(lines, "firefox") {
+		t.Fatalf("completions = %q", out)
 	}
 }
 

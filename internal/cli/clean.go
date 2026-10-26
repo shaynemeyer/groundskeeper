@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,7 +60,9 @@ Safety:
   - Refuses a browser that is running; quit it first.
   - Only touches folders inside the browsers' own data and cache folders,
     and never follows a symlink out of them.
-  - Moves to the Trash, so you can put things back until you empty it.`,
+  - Moves to the Trash, so you can put things back until you empty it.
+
+See also: gk help safety, gk logs --cmd clean`,
 		Example: `  # See what clearing Chrome and Firefox caches would save
   gk clean browsers --browser chrome,firefox
 
@@ -73,9 +77,33 @@ Safety:
 		},
 	}
 	cmd.Flags().StringSliceVar(&opts.browsers, "browser", nil, "browsers to clean: "+strings.Join(scan.BrowserKeys(), ", ")+" (default all)")
+	cmd.RegisterFlagCompletionFunc("browser", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return installedBrowsers(home), cobra.ShellCompDirectiveNoFileComp
+	})
 	cmd.Flags().BoolVar(&opts.offline, "include-offline", false, "also move offline data, not just caches")
 	cmd.Flags().BoolVar(&opts.apply, "apply", false, "move to the Trash; without it nothing changes")
 	return cmd
+}
+
+// installedBrowsers lists the --browser names that have folders here.
+func installedBrowsers(home string) []string {
+	var keys []string
+	for _, f := range scan.BrowserFolderList(home) {
+		if slices.Contains(keys, f.Key) {
+			continue
+		}
+		for _, p := range f.Paths {
+			if _, err := os.Lstat(p); err == nil {
+				keys = append(keys, f.Key)
+				break
+			}
+		}
+	}
+	return keys
 }
 
 func runCleanBrowsers(cmd *cobra.Command, global *globalOptions, opts *cleanBrowsersOptions) error {

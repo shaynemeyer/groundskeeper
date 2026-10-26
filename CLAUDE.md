@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Build steps 1 to 6 of `docs/groundskeeper-plan.md` are done: CLI skeleton, logging, size engine, all Mac scanners, the HTML report, `clean browsers` (`internal/clean`), and history with metrics (`internal/history`, `internal/metrics`) shown by the report and the `history`, `stats` and `logs` commands. CLI tests keep scans inside a fake home through the `appDirs` and `toolRunner` hooks in `internal/cli/scan.go`. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
+Build steps 1 to 7 of `docs/groundskeeper-plan.md` are done, so the Mac side is complete: CLI skeleton, logging, size engine, all Mac scanners, the HTML report, `clean browsers` (`internal/clean`), history with metrics (`internal/history`, `internal/metrics`), the `history`, `stats` and `logs` commands, the launchd schedule (`launchd/`), notifications (`internal/notify`), `doctor` (`internal/doctor`) and the help topics. Next is the iPhone spike (step 8). CLI tests keep scans inside a fake home through the `appDirs` and `toolRunner` hooks in `internal/cli/scan.go`. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
 
 After each build step, add an entry at the top of `docs/build-log.md`: what was built, decisions, problems found (with the evidence that proved the root cause), what was verified and how, and what is still open. Keep personal paths and data out of it.
 
@@ -15,11 +15,12 @@ Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that 
 - `make build`: builds `bin/groundskeeper` with the git version stamped in
 - `make test`: `go test ./...`, then `govulncheck` (pinned in the Makefile). Run a single test with `go test ./internal/scan -run TestName`
 - `make run`: builds, scans and opens the report
-- `make install` / `make uninstall`: the binary in `~/bin`, the `gk` symlink, and zsh completion for both names in `~/.zsh/completions` (step 7 adds the LaunchAgent). Reinstall after changes to use them as `gk`
+- `make install` / `make uninstall`: the binary in `~/bin`, the `gk` symlink, zsh completion for both names in `~/.zsh/completions`, and the LaunchAgent (loaded with `launchctl bootstrap`). Reinstall after changes to use them as `gk` and on the schedule
+- `launchctl kickstart gui/$(id -u)/com.lot86.groundskeeper`: run the scheduled job now, as launchd runs it (stdin `/dev/null`, minimal `PATH`)
 - `./bin/groundskeeper scan --dry`: scan this Mac without writing the report or log
 - `go test -race ./...`: the size engine and scanners are concurrent
 
-Still to come: the LaunchAgent in `make install` (step 7), `make install-tunnel` (step 9), and `swift build` for `photos-helper` (step 10).
+Still to come: `make install-tunnel` (step 9), and `swift build` for `photos-helper` (step 10).
 
 Go is pinned to the latest patch release in `go.mod` (`go 1.27.3`). `GOTOOLCHAIN=auto` downloads it if needed. When `govulncheck` reports a vulnerability, upgrade the Go patch release or the module it names rather than suppressing it.
 
