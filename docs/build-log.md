@@ -10,6 +10,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Increment 2:** `photos-helper hash --source <source>` reads asset IDs on stdin and writes `{"source","hashes":[{id, sha256}],"failed":[{id, reason}]}`, with the new reason `read`. The device path reads each file in 4 MB chunks with `ICCameraFile.requestReadData(atOffset:length:)`; the library path streams the original `PHAssetResource` (the one `list` counts as `bytes`, now shared as `originalResource`) through `PHAssetResourceManager.requestData` with network access off. `Helper.Hash` is the Go side.
 - **Increment 3:** `NearDuplicates` (`internal/iphone/group.go`) sorts photos by date, compares every pair taken within the window and every pair in the same burst, and joins pairs at most `NearDistance` (0.025) apart with a union-find, so links chain. Groups hold two or more IDs, oldest first. Photos without an analysis are left out, and photos without a date are only compared within their burst.
 - **Increment 4:** `ExactCandidates` (`internal/iphone/exact.go`) returns the assets that share their size and dimensions with another, the only ones worth hashing. `ExactDuplicates` groups assets whose size, dimensions and SHA-256 all match, oldest first; assets without a hash or a size are left out.
+- **Increment 5:** `Keep` (`internal/iphone/best.go`) returns a group's keepers: every protected asset (`Asset.Protected`: favorite, edited or in an album) plus the best shot, the highest aesthetics score. With protected assets in the group the best shot is chosen among them. A missing score ranks lowest, and ties go to the older photo.
 
 ### Decisions
 
@@ -20,6 +21,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Only same-shape assets are hashed.** On the device path `hash` reads each file in full over USB (about 32 MB/s), and a byte-identical copy always has the same size and dimensions. No two of the phone's 1,158 files share a size, so on this phone nothing is hashed at all.
 - **The hash alone never groups.** A matching SHA-256 with a different size can only be a stale or wrong answer, so size and dimensions are part of the grouping key.
 - **A missing size never matches.** PhotoKit's size key is undocumented and gives 0 when missing; without the guard, every asset missing it would be hashed and could group.
+- **Aesthetics alone picks the best shot; sharpness and face quality are deferred.** The user was shown the phone's 12 groups with left and right shuffled and no scores, and answered "either" for all 12. Within each pair the aesthetics scores differed by 0.063 at most and 0.002 or less in two. With no wrong pick to correct, adding two new Vision measurements to the helper wasn't justified. The plan now says so.
+- **A favorite isn't kept alongside an extra photo.** When a group holds protected assets, the best shot is picked among them, so a group with one favorite keeps just that favorite. The plan only said protected photos are always kept.
 - **It's a constant, not a config option.** One calibration on one phone doesn't say which way another user would move it.
 - **The helper's stdout is decoded even when it exits 1,** because that's where its error kind is. Its stderr is never read.
 
@@ -32,6 +35,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - With the phone unplugged, `list --source device` answered `{"error":"no-device"}` with exit 1, which closes that part of step 10's open item.
 - `exact_test.go` covers matching, same shape with different contents, a failed hash, missing sizes, and a shared hash with different sizes. Removing the zero-size guard fails `TestExactCandidates`; grouping by hash alone fails `TestExactDuplicatesNeedsSameShape`.
 - In the Mac library the user imported a screenshot twice. `list` gave 6 assets; the same-shape filter picked the 2 copies, `hash` gave both the same SHA-256 with no failures, and the Go `ExactCandidates` and `ExactDuplicates`, run on the saved output from a temporary test, picked the same 2 and returned one group of exactly those two.
+- `best_test.go` covers the best score, protected assets beating a higher score, ties and missing scores. Letting the best shot ignore protection fails `TestKeepProtected` and `TestKeepEditedOverBetterScore`.
 
 ### Problems found
 
@@ -44,6 +48,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - An edited library photo's render is reported, as PhotoKit's `fullSizePhoto` resource (12,467 bytes on the edited screenshot), so it's counted in `sidecarBytes`. This answers step 10's open question.
 - Vision's ranking doesn't always match the user's eye: of the first 14 pairs, the user found the one at 0.075 more alike than the one at 0.048.
 - Every pair the user called a duplicate was taken within 2 seconds, and every pair 12 s or more apart wasn't. A time rule might separate the mixed 0.026 to 0.048 range, but that's 39 pairs on one phone, so the 10-minute window stays.
+- The best-shot check couldn't test a sharp shot against a blurry one: at the 0.025 cutoff the grouped photos are nearly identical. If reviews show bad picks, sharpness (not a Vision request; would need its own measure) and Vision's face capture quality are the candidates.
+- Both copies of the library's exact pair report `inAlbum: true`, so `Keep` keeps both and the group has nothing to delete. The user only dragged them into the library, but a read-only probe (`fetchAssetCollectionsContaining`, album subtypes only) found every screenshot in the library, both copies included, in a `regular` album, the kind a person makes, and none in an imported or synced one. So the flag and the rule are right; how the copies got into that album (perhaps it was open in the sidebar during the drop) isn't known.
 - An exact pair taken at the same moment would also be a near-duplicate group. The review has to merge or de-duplicate the two kinds of group.
 - Exact duplicates on the phone itself weren't tested, since it has none. Whether Photos' Duplicate command on the phone makes a byte-identical copy isn't known.
 - Video poster frames are grouped like photos; none of the 12 groups mixed a video with a photo, but nothing prevents it.

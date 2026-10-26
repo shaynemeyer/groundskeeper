@@ -273,7 +273,7 @@ flowchart TD
 **Detection,** in Go, using the helper's output:
 1. **Exact duplicates:** grouped by size and dimensions, then confirmed with the helper's `hash`.
 2. **Near-duplicates:** photos taken within 10 minutes of each other, or in the same burst, are compared by feature-print distance and linked into groups when they're 0.025 or less apart (`NearDistance`, calibrated against the user's judgments in step 11).
-3. **Best shot to keep:** aesthetic score, sharpness and face quality. Favorites, edited photos and photos in albums are always kept.
+3. **Best shot to keep:** the highest aesthetic score, with ties going to the oldest photo. Favorites, edited photos and photos in albums are always kept, and when a group has any, the best shot is chosen among them. Sharpness and face quality are deferred: on the phone's 12 groups the user had no preference in any of them (step 11), so there was no wrong pick for them to fix. They come back if reviews show bad picks.
 4. **Other categories:** screenshots older than 30 days and the largest videos.
 
 **Review and delete:**
