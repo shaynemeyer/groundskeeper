@@ -13,11 +13,12 @@ import (
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 )
 
-// fake answers launchctl, plutil and fdesetup.
+// fake answers launchctl, plutil, fdesetup and photos-helper.
 type fake struct {
 	loaded    bool
 	fileVault string
 	plistJSON string
+	access    string
 }
 
 func (f fake) run(_ context.Context, name string, _ ...string) ([]byte, error) {
@@ -31,6 +32,9 @@ func (f fake) run(_ context.Context, name string, _ ...string) ([]byte, error) {
 		return []byte(f.plistJSON), nil
 	case "fdesetup":
 		return []byte(f.fileVault), nil
+	}
+	if filepath.Base(name) == "photos-helper" && f.access != "" {
+		return []byte(`{"access":"` + f.access + `"}`), nil
 	}
 	return nil, errors.New("unexpected " + name)
 }
@@ -207,5 +211,23 @@ func TestPhotosHelper(t *testing.T) {
 	os.Chmod(path, 0o755)
 	if c := photosHelper(e); c.Status != OK || c.Detail != path {
 		t.Errorf("installed = %+v", c)
+	}
+}
+
+func TestPhotosAccess(t *testing.T) {
+	cases := map[string]string{
+		"":               "couldn't check",
+		"authorized":     "readable",
+		"limited":        "limited",
+		"denied":         "denied",
+		"restricted":     "restricted",
+		"not-determined": "not granted yet",
+	}
+	for access, detail := range cases {
+		c := photosAccess(context.Background(), env(t, fake{access: access}))
+		wantOK := access == "authorized"
+		if (c.Status == OK) != wantOK || !strings.Contains(c.Detail, detail) || (c.Fix == "") != wantOK {
+			t.Errorf("%q: got %+v", access, c)
+		}
 	}
 }

@@ -4,6 +4,7 @@
 //   photos-helper analyze --source <source> < ids.json
 //   photos-helper thumbnail --source <source> --out <dir> < ids.json
 //   photos-helper delete --source <source> < requests.json
+//   photos-helper access
 import Foundation
 
 let usage = """
@@ -11,6 +12,7 @@ let usage = """
            photos-helper analyze --source <source> < ids.json
            photos-helper thumbnail --source <source> --out <dir> < ids.json
            photos-helper delete --source <source> < requests.json
+           photos-helper access
     <source> is device (the iPhone on USB) or mac-library.
 
     """
@@ -54,6 +56,10 @@ func outputDir(_ path: String) -> URL {
 }
 
 let args = CommandLine.arguments.dropFirst()
+if args.first == "access" {
+    guard args.count == 1 else { usageError() }
+    emit(["access": libraryAccess()])
+}
 guard let command = args.first.flatMap(Command.init), let flags = parseFlags(args.dropFirst()),
     let source = flags["source"], ["device", "mac-library"].contains(source)
 else { usageError() }

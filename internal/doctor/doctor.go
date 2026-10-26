@@ -57,6 +57,7 @@ func Run(ctx context.Context, env Env) []Check {
 	return []Check{
 		installed(env),
 		photosHelper(env),
+		photosAccess(ctx, env),
 		fullDiskAccess(env),
 		schedule(ctx, env),
 		lastScheduledRun(env),
@@ -103,6 +104,33 @@ func photosHelper(env Env) Check {
 		return c
 	}
 	c.Fix = "Run make install in the groundskeeper repo."
+	return c
+}
+
+// photosAccess asks photos-helper for the Photos access macOS has recorded,
+// which doesn't prompt. Like Full Disk Access, it belongs to the terminal app
+// doctor runs from.
+func photosAccess(ctx context.Context, env Env) Check {
+	c := Check{Name: "Photos access"}
+	out, err := env.Run(ctx, HelperPath(env.Home), "access")
+	var answer struct{ Access string }
+	if err != nil || json.Unmarshal(out, &answer) != nil {
+		c.Status, c.Detail = Warn, "couldn't check"
+		c.Fix = "Run make install in the groundskeeper repo."
+		return c
+	}
+	switch answer.Access {
+	case "authorized":
+		c.Status, c.Detail = OK, "the Mac Photos library is readable"
+		return c
+	case "limited":
+		c.Status, c.Detail = Warn, "limited to the photos you picked, so the rest of the library isn't scanned"
+	case "not-determined":
+		c.Status, c.Detail = Warn, "not granted yet; macOS asks the first time the library is scanned from a terminal app"
+	default:
+		c.Status, c.Detail = Warn, answer.Access+", so the Mac Photos library can't be scanned"
+	}
+	c.Fix = "System Settings > Privacy & Security > Photos: give your terminal app full access, then run gk from it."
 	return c
 }
 

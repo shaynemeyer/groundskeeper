@@ -9,6 +9,19 @@ func requestLibraryAccess() async -> Bool {
     await PHPhotoLibrary.requestAuthorization(for: .readWrite) == .authorized
 }
 
+/// The Photos access macOS has recorded for the app the helper runs from,
+/// without prompting.
+func libraryAccess() -> String {
+    switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+    case .authorized: "authorized"
+    case .limited: "limited"
+    case .denied: "denied"
+    case .restricted: "restricted"
+    case .notDetermined: "not-determined"
+    @unknown default: "unknown"
+    }
+}
+
 /// Every photo and video in the Mac Photos library, oldest first. Every photo
 /// of a burst is included, as on the device path; hidden photos are not.
 func libraryAssets() -> [PHAsset] {

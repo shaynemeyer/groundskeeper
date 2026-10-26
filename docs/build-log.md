@@ -2,7 +2,7 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
-## Step 10: photos-helper (in progress)
+## Step 10: photos-helper
 
 ### Built
 
@@ -11,6 +11,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Increment 3:** `thumbnail --source device --out <dir>` reads asset IDs on stdin and saves the phone's 1024-pixel JPEG thumbnail of each, without re-encoding. It writes `{"source","thumbnails":[{id, path}],"failed":[{id, reason}]}`; `write` joins the failure reasons. Flags are parsed as `--name value` pairs, and unknown or missing flags exit 2.
 - **Increment 5:** every command takes `--source mac-library` (`Library.swift`). `list` adds `favorite`, `edited` and `inAlbum`, which the device path leaves out; the ID is PhotoKit's local identifier. `bytes` is the original's size from `PHAssetResource`'s `fileSize` key, and everything else (Live Photo video, edits, renders) is `sidecarBytes`. Without Photos access every command answers `{"error": "denied"}` with exit 1. `analyze` and `thumbnail` share their loop with the device path, which now only supplies the lookup and the image fetch. `delete` refuses mismatches as on the device, deletes in one `performChanges`, and reports as deleted only the IDs that can't be fetched afterwards.
 - **Increment 6 (before 5):** `make install` copies `bin/photos-helper` to `~/bin/photos-helper` (`0755`) and `make uninstall` removes it. `doctor.HelperPath` names that path for the Go side to run, and `gk doctor` has a "Photos helper" check: missing, or not an executable file, is a warning with "Run make install" as the fix.
+- **Increment 7:** `photos-helper access` prints `{"access": "authorized" | "limited" | "denied" | "restricted" | "not-determined"}` from `PHPhotoLibrary.authorizationStatus(for: .readWrite)`, without prompting, and takes no `--source`. `gk doctor` has a "Photos access" check after "Photos helper": `authorized` is ok, every other answer is a warning with the System Settings fix, and a helper that can't answer gives "couldn't check" with "Run make install".
 - **Increment 4:** `delete --source device` reads `[{id, bytes, created}]` on stdin, refuses any asset whose size differs or whose date is more than a second off (`mismatch`), and deletes the rest in one `requestDeleteFiles` call. It writes `{"source","deleted":[ids],"failed":[{id, reason}]}`, with `delete` for files the phone didn't report as deleted.
 
 ### Decisions
@@ -20,6 +21,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Hidden photos are left out of the library listing,** so a review never shows a photo the user hid. All burst photos are included, as on the device path.
 - **The library delete keeps the size and date check.** Local identifiers aren't reused the way phone file names are, but one input format and one rule for both sources is simpler, and it still catches a stale selection.
 - **The helper lives in `~/bin`, next to `groundskeeper`.** The plan only said "the install location"; one folder keeps install, uninstall and Full Disk Access advice in one place. It's run by absolute path, so being on `$PATH` doesn't matter.
+- **`access` reads the status; it never requests it.** `doctor` only reads, and Apple's page for `authorizationStatus(for:)` lists the statuses without saying whether it prompts, so this was checked by running it (see Verified). Like Full Disk Access, the answer belongs to the terminal app `doctor` runs from.
+- **Anything short of full access is a warning.** `limited` would leave most of the library out of a review, and a missing Photos grant doesn't affect the Mac scan or the schedule.
 - **A missing helper is a warning, not a failure.** The Mac scan and the schedule don't use it, and a failed check makes `doctor` exit with an error.
 - **The check doesn't run the helper.** Stat and the execute bit are enough to catch a missing or half-finished install; running it would add a process for little gain.
 - **The asset ID is the folder and file name on the phone.** A probe over 1,162 files on two sessions found `originatingAssetID` and `fingerprint` empty for every file and `ptpObjectHandle` the same for every file. Folder and file name was unique for every file and identical across both sessions (same SHA-256 of the sorted list). `delete` should still check size and date before deleting, as the step 8 spike did.
@@ -43,6 +46,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - `delete --source mac-library`: a size one byte off and a date five seconds off were each `mismatch`, with no dialog. The exact request showed macOS's confirmation; after Delete, the helper reported it deleted, and the user found it in Recently Deleted.
 - Device path after the refactor: `list` 1,158 assets with no new keys, `analyze` and `thumbnail` on the 5 newest unchanged in shape and size, and a size-mismatched `delete` refused with nothing deleted.
 - Increment 6: `TestPhotosHelper` covers missing, not executable and installed; it fails with the execute-bit check removed. `make test` passes. After `make install`, `~/bin/photos-helper` is `-rwxr-xr-x`, runs and prints usage (exit 2), and `gk doctor` shows "ok Photos helper" and exits 0.
+- Increment 7: `access` printed `authorized` from Ghostty and `not-determined` from VS Code, each with exit 0 and no dialog; an extra argument exits 2. `TestPhotosAccess` covers the five statuses and an unusable answer, and fails when `limited` is made ok. After `make install`, `gk doctor` from Ghostty shows "ok Photos access". Before reinstalling, the line was missing because `~/bin` still held the older build.
 - `analyze` on all 1,162 assets plus one made-up ID: 140 s, 1,162 analyses, every print 3,072 bytes, the made-up ID reported as `not-found`.
 
 ### Problems found
@@ -54,6 +58,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 
 ### Open
 
+- VS Code reports `not-determined`, yet `requestAuthorization` from VS Code answers `denied` without a prompt, so `doctor` there says "not granted yet" when macOS won't ask. The fix text covers both.
 - The `no-device` and `locked` paths still need a run with the phone unplugged, and with it locked.
 - Favorites, albums and edits aren't visible over USB. Edits may be detectable from `.AAE` sidecars.
 - Whether file names stay the same after other photos are deleted.
@@ -63,7 +68,6 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Whether deleting a Live Photo also removes its video sidecar. Both test photos had no sidecars.
 - `thumbnail` doesn't tighten the permissions of an `--out` directory that already exists, and doesn't delete old thumbnails. Step 11's Go side creates and cleans that directory.
 - Sharpness and face quality for best-shot scoring aren't computed yet.
-- The Photos access check in `doctor`.
 - Library sizes were only checked on screenshots. The edited screenshot's `sidecarBytes` was 2,048, probably the adjustment data alone; whether the edited render's size is reported isn't known. Live Photos, videos and photos whose original is only in iCloud weren't in the test library.
 - Library videos fail `analyze` and `thumbnail`: the image data path has no poster frame for them.
 
