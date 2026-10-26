@@ -2,6 +2,30 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 10: photos-helper (in progress)
+
+### Built
+
+- **Increment 1:** the Swift package `helpers/photos-helper` (Swift 6 language mode, macOS 26+) with `list --source device`. It opens the first iPhone on USB with ImageCaptureCore and writes `{"source","assets":[{id, created, width, height, bytes, sidecarBytes, burst}]}` to stdout. Errors are `{"error": "no-device" | "locked" | "timeout"}` with exit 1; bad arguments print usage and exit 2. `make build` also builds it into `bin/photos-helper`.
+
+### Decisions
+
+- **The asset ID is the folder and file name on the phone.** A probe over 1,162 files on two sessions found `originatingAssetID` and `fingerprint` empty for every file and `ptpObjectHandle` the same for every file. Folder and file name was unique for every file and identical across both sessions (same SHA-256 of the sorted list). `delete` should still check size and date before deleting, as the step 8 spike did.
+- **No phone is detected with a 10 s timeout**, not `deviceBrowserDidEnumerateLocalDevices`: that callback fired with zero devices before the phone was added, on every run.
+- **Open errors aren't final.** With the phone unlocked, each run still got "access restricted", an open error -9943, then "access restriction removed", and the catalog arrived without retrying. So `list` waits up to 120 s for the catalog and reports `locked` only if the phone is still restricted then.
+- No GPS (`gpsString`), file contents or device name in the output. `sidecarBytes` counts Live Photo videos and edit files (192 sidecars on the test phone), so space estimates aren't short.
+
+### Verified
+
+- On the phone (iOS 27.0.1): 1,162 assets, all with unique IDs, a date and dimensions; no GPS or location keys in the output. Folders are named `YYYYMM__`, not `100APPLE`.
+- Bad arguments exit 2 with usage.
+
+### Open
+
+- The `no-device` and `locked` paths still need a run with the phone unplugged, and with it locked.
+- Favorites, albums and edits aren't visible over USB. Edits may be detectable from `.AAE` sidecars.
+- Whether file names stay the same after other photos are deleted.
+
 ## Step 9: iPhone storage, apps and shared files
 
 ### Built

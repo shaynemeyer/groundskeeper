@@ -11,6 +11,8 @@ DOMAIN = gui/$(shell id -u)
 
 build:
 	go build -ldflags "-X main.version=$(VERSION)" -o bin/groundskeeper ./cmd/groundskeeper
+	swift build -c release --package-path helpers/photos-helper
+	install -m 0755 helpers/photos-helper/.build/release/photos-helper bin/photos-helper
 
 test:
 	go test ./...

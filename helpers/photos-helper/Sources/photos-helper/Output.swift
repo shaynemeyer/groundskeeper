@@ -1,0 +1,35 @@
+import Foundation
+
+/// The answer to `list`: every photo and video in the source.
+struct Listing: Encodable {
+    let source: String
+    let assets: [Asset]
+}
+
+/// Error kinds. Messages from Apple's frameworks are never passed through,
+/// because ImageCaptureCore's contain the iPhone's name.
+enum ErrorKind: String, Error, Encodable {
+    case noDevice = "no-device"
+    case locked
+    case timeout
+}
+
+/// Writes value as JSON to stdout and exits 0.
+func emit(_ value: some Encodable) -> Never {
+    write(value)
+    exit(0)
+}
+
+/// Writes {"error": kind} to stdout and exits 1.
+func fail(_ kind: ErrorKind) -> Never {
+    write(["error": kind])
+    exit(1)
+}
+
+private func write(_ value: some Encodable) {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = .sortedKeys
+    FileHandle.standardOutput.write(try! encoder.encode(value))
+    FileHandle.standardOutput.write(Data("\n".utf8))
+}
