@@ -9,6 +9,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Increment 1:** the Swift package `helpers/photos-helper` (Swift 6 language mode, macOS 26+) with `list --source device`. It opens the first iPhone on USB with ImageCaptureCore and writes `{"source","assets":[{id, created, width, height, bytes, sidecarBytes, burst}]}` to stdout. Errors are `{"error": "no-device" | "locked" | "timeout"}` with exit 1; bad arguments print usage and exit 2. `make build` also builds it into `bin/photos-helper`.
 - **Increment 2:** `analyze --source device` reads a JSON array of asset IDs on stdin, fetches a 512-pixel thumbnail of each from the phone, and runs Vision's `GenerateImageFeaturePrintRequest` and `CalculateImageAestheticsScoresRequest` (the Swift API, macOS 15+). It writes `{"source","analyses":[{id, featurePrint, aesthetics, utility}],"failed":[{id, reason}]}`, where reason is `not-found`, `thumbnail` or `vision`.
 - **Increment 3:** `thumbnail --source device --out <dir>` reads asset IDs on stdin and saves the phone's 1024-pixel JPEG thumbnail of each, without re-encoding. It writes `{"source","thumbnails":[{id, path}],"failed":[{id, reason}]}`; `write` joins the failure reasons. Flags are parsed as `--name value` pairs, and unknown or missing flags exit 2.
+- **Increment 4:** `delete --source device` reads `[{id, bytes, created}]` on stdin, refuses any asset whose size differs or whose date is more than a second off (`mismatch`), and deletes the rest in one `requestDeleteFiles` call. It writes `{"source","deleted":[ids],"failed":[{id, reason}]}`, with `delete` for files the phone didn't report as deleted.
 
 ### Decisions
 
@@ -19,6 +20,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **512-pixel thumbnails.** On 20 photos, 512 and 1024 pixels both took about 130 ms per photo to fetch (most of it USB round trips) and Vision under 20 ms, with near-identical scores (aesthetics 0.27 against 0.24 on one photo).
 - **Thumbnail files are named by the first 16 bytes of the ID's SHA-256.** IDs come from the phone, so they're never used as paths. The directory is created `0700` and the files `0600`: they are the user's photos.
 - **1024-pixel review thumbnails.** Fetching took the same time as 512 in increment 2, and Quick Look needs enough detail to tell near-duplicates apart.
+- **The camera roll over USB is a snapshot taken at connection.** A photo taken while the phone was plugged in didn't appear in two listings two minutes later; after unplugging and reconnecting it was there (1,158 to 1,159 assets). Step 11 should tell the user to reconnect if the newest photos are missing.
 - No GPS (`gpsString`), file contents or device name in the output. `sidecarBytes` counts Live Photo videos and edit files (192 sidecars on the test phone), so space estimates aren't short.
 
 ### Verified
@@ -26,10 +28,12 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - On the phone (iOS 27.0.1): 1,162 assets, all with unique IDs, a date and dimensions; no GPS or location keys in the output. Folders are named `YYYYMM__`, not `100APPLE`.
 - Bad arguments exit 2 with usage.
 - `thumbnail` for the 5 newest photos plus a made-up ID, into a new nested directory: 5 JPEGs at 768x1024 or 1018x764, both directories `drwx------`, files `-rw-------`, names 32 hex characters, the made-up ID `not-found`. ImageIO found no GPS dictionary in any of them. Into a read-only directory, every photo failed with `write`. A missing `--out`, `--out` on `list`, an unknown flag and `--source mac-library` each exit 2.
+- `delete`, on two throwaway photos the user took for the test, each the only asset from the last hour: a size one byte off and a date five seconds off were each refused as `mismatch` and the photo stayed. The exact request deleted it: the second run printed it as deleted with exit 0, and the next listing no longer had it (1,159 to 1,158). An unknown ID gave `not-found`; input without `created` exited 2.
 - `analyze` on all 1,162 assets plus one made-up ID: 140 s, 1,162 analyses, every print 3,072 bytes, the made-up ID reported as `not-found`.
 
 ### Problems found
 
+- **`delete` crashed after the phone deleted the photo.** The first real delete removed the photo but the helper died with no output. The crash report showed `EXC_BREAKPOINT` in `_dispatch_assert_queue_fail` under `_swift_task_checkIsolatedSwift`, inside the completion block of `requestDeleteFiles`, on `com.apple.root.user-initiated-qos`. The block was written inside a `@MainActor` function, so Swift 6 inferred it as main-actor isolated, and ImageCaptureCore called it on a background queue. Fixed by marking the ImageCaptureCore blocks `@Sendable`, which makes them nonisolated; they only resume a continuation. The thumbnail block got the same fix, since its header says it may run on any queue, though it hadn't crashed in 1,162 calls. The second throwaway deleted cleanly with no new crash report.
 - **The catalog timeout would have cut off `analyze`.** In increment 1, the 120 s timer kept running after the catalog arrived, and its handler fails with `locked` or `timeout`; a full `analyze` takes 140 s. Found while reading the code for increment 2. Fixed by stopping the timers once the catalog is delivered; the full 140 s run now finishes.
 
 ### Open
@@ -39,6 +43,8 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Whether file names stay the same after other photos are deleted.
 - `utility` isn't a screenshot detector: it flagged 26 of 53 PNGs (iPhone screenshots are PNG) and 249 of 1,077 HEIC photos. Step 11 needs another way to find screenshots.
 - Videos are analyzed from their poster frame.
+- 4 assets disappeared from the listing between the morning's run and the delete tests, before any delete had run. Not yet explained; the user may have deleted them on the phone.
+- Whether deleting a Live Photo also removes its video sidecar. Both test photos had no sidecars.
 - `thumbnail` doesn't tighten the permissions of an `--out` directory that already exists, and doesn't delete old thumbnails. Step 11's Go side creates and cleans that directory.
 - Sharpness and face quality for best-shot scoring aren't computed yet.
 

@@ -3,17 +3,19 @@
 //   photos-helper list --source device
 //   photos-helper analyze --source device < ids.json
 //   photos-helper thumbnail --source device --out <dir> < ids.json
+//   photos-helper delete --source device < requests.json
 import Foundation
 
 let usage = """
     usage: photos-helper list --source device
            photos-helper analyze --source device < ids.json
            photos-helper thumbnail --source device --out <dir> < ids.json
+           photos-helper delete --source device < requests.json
 
     """
 
 enum Command: String {
-    case list, analyze, thumbnail
+    case list, analyze, thumbnail, delete
 }
 
 func usageError() -> Never {
@@ -32,11 +34,13 @@ func parseFlags(_ args: ArraySlice<String>) -> [String: String]? {
     return flags
 }
 
-/// Reads a JSON array of asset IDs from stdin.
-func readIDs() -> [String] {
+/// Reads JSON from stdin, with dates in ISO 8601 as list writes them.
+func readInput<T: Decodable>(_ type: T.Type) -> T {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
     let data = FileHandle.standardInput.readDataToEndOfFile()
-    guard let ids = try? JSONDecoder().decode([String].self, from: data) else { usageError() }
-    return ids
+    guard let value = try? decoder.decode(type, from: data) else { usageError() }
+    return value
 }
 
 /// Creates dir with mode 0700 if it doesn't exist.
@@ -54,7 +58,8 @@ guard let command = args.first.flatMap(Command.init), let flags = parseFlags(arg
 else { usageError() }
 let allowed: Set<String> = command == .thumbnail ? ["source", "out"] : ["source"]
 guard Set(flags.keys) == allowed else { usageError() }
-let ids = command == .list ? [] : readIDs()
+let ids = command == .analyze || command == .thumbnail ? readInput([String].self) : []
+let requests = command == .delete ? readInput([DeleteRequest].self) : []
 let out = flags["out"].map(outputDir)
 
 let catalog = DeviceCatalog { result in
@@ -66,6 +71,7 @@ let catalog = DeviceCatalog { result in
     case .list: emit(Listing(source: "device", assets: files.map(Asset.init)))
     case .analyze: Task { emit(await analyze(ids, in: files)) }
     case .thumbnail: Task { emit(await writeThumbnails(ids, in: files, to: out!)) }
+    case .delete: Task { emit(await delete(requests, in: files)) }
     }
 }
 catalog.start()

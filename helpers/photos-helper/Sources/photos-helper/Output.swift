@@ -13,6 +13,8 @@ struct Failure: Encodable {
         case thumbnail
         case vision
         case write
+        case mismatch
+        case delete
     }
 
     let id: String

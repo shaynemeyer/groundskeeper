@@ -52,11 +52,12 @@ func fileName(for id: String) -> String {
 }
 
 /// Fetches a JPEG thumbnail from the phone, with its longest side at most
-/// pixels. Returns nil if the phone doesn't send one.
+/// pixels. Returns nil if the phone doesn't send one. The block is @Sendable
+/// because ImageCaptureCore may call it on any queue.
 @MainActor
 func thumbnailData(of file: ICCameraFile, pixels: Int) async -> Data? {
     await withCheckedContinuation { done in
-        file.requestThumbnailData(options: [.imageSourceThumbnailMaxPixelSize: pixels]) { data, _ in
+        file.requestThumbnailData(options: [.imageSourceThumbnailMaxPixelSize: pixels]) { @Sendable data, _ in
             done.resume(returning: data)
         }
     }
