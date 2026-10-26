@@ -2,6 +2,14 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## After step 7: private launchd log
+
+- **Problem:** `~/Library/Logs/groundskeeper.launchd.log` was `-rw-r--r--`, readable by other users, while every other file was `0600`. launchd created it with default permissions. It holds the scan summary: free space, report path and largest item names.
+- **Fix:**
+  - `make install` creates the file with mode `0600` before loading the agent.
+  - `doctor` has a new "Log files" check that warns if either log can be read by others, with the `chmod 600` fix. A failing test came first.
+- **Verified:** a real scheduled run appended to the file (965 to 1,447 bytes) and it stayed `-rw-------`. `gk doctor` reports "readable only by you".
+
 ## Step 7: Schedule, notification, doctor, help topics and completion
 
 ### Built

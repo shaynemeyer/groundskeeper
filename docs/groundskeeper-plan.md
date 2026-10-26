@@ -389,7 +389,7 @@ Help topics
 
 - Running `groundskeeper` with no subcommand runs `scan`, so launchd and `gk` stay short.
 - Groups use Cobra's [command groups](https://pkg.go.dev/github.com/spf13/cobra#Group). Help topics are commands with no `Run`, which Cobra lists under "Additional help topics" ([docs](https://cobra.dev/docs/how-to-guides/working-with-commands/)).
-- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, and whether `outputDir` is in a synced folder. The iOS 17 tunnel, Photos access and `photos-helper` checks are added with iPhone mode (steps 9 to 11). Warnings exit 0; a failed check makes `doctor` exit with an error.
+- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, whether `outputDir` is in a synced folder, and whether both log files are readable only by the user. The iOS 17 tunnel, Photos access and `photos-helper` checks are added with iPhone mode (steps 9 to 11). Warnings exit 0; a failed check makes `doctor` exit with an error.
 
 ### Help content
 
@@ -571,7 +571,7 @@ A LaunchAgent at `~/Library/LaunchAgents/com.lot86.groundskeeper.plist`:
 
 - `StartCalendarInterval` holds two entries: Monday (`Weekday 1`) and Thursday (`Weekday 4`) at 09:00. The days and time are adjustable.
 - If the Mac is asleep at the scheduled time, launchd runs the job when it wakes. cron doesn't do this, which is why launchd is used.
-- The tool writes its own log to `~/Library/Logs/groundskeeper.log`. The plist's `StandardOutPath` and `StandardErrorPath` point to `~/Library/Logs/groundskeeper.launchd.log`.
+- The tool writes its own log to `~/Library/Logs/groundskeeper.log`. The plist's `StandardOutPath` and `StandardErrorPath` point to `~/Library/Logs/groundskeeper.launchd.log`. launchd would create that file readable by everyone, so `make install` creates it first with mode `0600`; launchd keeps the mode when it appends.
 - `ProgramArguments` is `~/bin/groundskeeper scan --notify`.
 - No `ProcessType`: launchd's default applies light resource limits. `Background` was tried first and throttled disk reads so much (a 26 s scan took 7 minutes) that folders hit the two-minute timeout and the report was incomplete.
 - The template is `launchd/com.lot86.groundskeeper.plist` with a `__HOME__` placeholder that `make install` fills in, so no personal path is committed.

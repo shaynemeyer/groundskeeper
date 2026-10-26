@@ -61,6 +61,7 @@ func Run(ctx context.Context, env Env) []Check {
 		lastScheduledRun(env),
 		fileVault(ctx, env),
 		outputFolder(env),
+		logFiles(env),
 	}
 }
 
@@ -200,6 +201,27 @@ func outputFolder(env Env) Check {
 		return c
 	}
 	c.Status, c.Detail = OK, env.OutputDir+" stays on this Mac"
+	return c
+}
+
+// logFiles checks that both logs are readable only by the user. launchd
+// creates its log with default permissions if it doesn't exist yet.
+func logFiles(env Env) Check {
+	c := Check{Name: "Log files"}
+	var open []string
+	for _, name := range []string{"groundskeeper.log", "groundskeeper.launchd.log"} {
+		path := filepath.Join(env.Home, "Library", "Logs", name)
+		if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o077 != 0 {
+			open = append(open, path)
+		}
+	}
+	if len(open) == 0 {
+		c.Status, c.Detail = OK, "readable only by you"
+		return c
+	}
+	c.Status = Warn
+	c.Detail = strings.Join(open, ", ") + " can be read by other users"
+	c.Fix = "chmod 600 " + strings.Join(open, " ")
 	return c
 }
 

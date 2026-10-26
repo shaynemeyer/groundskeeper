@@ -160,3 +160,31 @@ func TestFullDiskAccess(t *testing.T) {
 		t.Errorf("blocked = %+v", c)
 	}
 }
+
+func TestLogFilesMustBePrivate(t *testing.T) {
+	e := env(t, fake{})
+	logs := filepath.Join(e.Home, "Library/Logs")
+	if err := os.MkdirAll(logs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if c := logFiles(e); c.Status != OK {
+		t.Errorf("no logs yet = %+v", c)
+	}
+	main := filepath.Join(logs, "groundskeeper.log")
+	launchd := filepath.Join(logs, "groundskeeper.launchd.log")
+	os.WriteFile(main, nil, 0o600)
+	os.WriteFile(launchd, nil, 0o644)
+	os.Chmod(launchd, 0o644)
+
+	c := logFiles(e)
+	if c.Status != Warn || !strings.Contains(c.Detail, "groundskeeper.launchd.log") || !strings.Contains(c.Fix, "chmod 600") {
+		t.Fatalf("readable launchd log = %+v", c)
+	}
+	if strings.Contains(c.Detail, "groundskeeper.log ") {
+		t.Errorf("private log reported: %+v", c)
+	}
+	os.Chmod(launchd, 0o600)
+	if c := logFiles(e); c.Status != OK {
+		t.Errorf("private logs = %+v", c)
+	}
+}

@@ -4,6 +4,7 @@ BIN_DIR ?= $(HOME)/bin
 COMPLETIONS_DIR ?= $(HOME)/.zsh/completions
 LABEL = com.lot86.groundskeeper
 PLIST = $(HOME)/Library/LaunchAgents/$(LABEL).plist
+LAUNCHD_LOG = $(HOME)/Library/Logs/groundskeeper.launchd.log
 DOMAIN = gui/$(shell id -u)
 
 .PHONY: build test run install uninstall
@@ -31,6 +32,10 @@ install: build
 	sed 's|__HOME__|$(HOME)|g' launchd/$(LABEL).plist > $(PLIST)
 	chmod 0644 $(PLIST)
 	plutil -lint $(PLIST)
+	# launchd would create its log readable by everyone; create it private first.
+	mkdir -p $(dir $(LAUNCHD_LOG))
+	touch $(LAUNCHD_LOG)
+	chmod 0600 $(LAUNCHD_LOG)
 	-launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null
 	launchctl bootstrap $(DOMAIN) $(PLIST)
 
