@@ -36,7 +36,7 @@ struct Asset: Encodable {
     /// Live Photo video, edits and the edited render, is sidecarBytes.
     init(_ asset: PHAsset, inAlbum: Bool) {
         let resources = PHAssetResource.assetResources(for: asset)
-        let original = resources.first { [.photo, .video, .audio].contains($0.type) }
+        let original = originalResource(of: asset)
         id = asset.localIdentifier
         created = asset.creationDate
         width = asset.pixelWidth
@@ -48,6 +48,11 @@ struct Asset: Encodable {
         edited = asset.hasAdjustments
         self.inAlbum = inAlbum
     }
+}
+
+/// The asset's original photo, video or audio file.
+func originalResource(of asset: PHAsset) -> PHAssetResource? {
+    PHAssetResource.assetResources(for: asset).first { [.photo, .video, .audio].contains($0.type) }
 }
 
 extension ICCameraFile {

@@ -49,6 +49,12 @@ type Analysis struct {
 	Utility      bool    `json:"utility"`
 }
 
+// FileHash is the SHA-256 of an asset's original file, in hex.
+type FileHash struct {
+	ID     string `json:"id"`
+	SHA256 string `json:"sha256"`
+}
+
 // Failure is an asset photos-helper couldn't handle, with the step that failed.
 type Failure struct {
 	ID     string `json:"id"`
@@ -92,6 +98,22 @@ func (h Helper) Analyze(ctx context.Context, ids []string) ([]Analysis, []Failur
 	}
 	err = h.call(ctx, in, &out, "analyze")
 	return out.Analyses, out.Failed, err
+}
+
+// Hash returns the SHA-256 of each asset's original file, and the ones that
+// failed. On the device path every file is read over USB, so callers only
+// pass assets that already match another in size and dimensions.
+func (h Helper) Hash(ctx context.Context, ids []string) ([]FileHash, []Failure, error) {
+	in, err := json.Marshal(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out struct {
+		Hashes []FileHash
+		Failed []Failure
+	}
+	err = h.call(ctx, in, &out, "hash")
+	return out.Hashes, out.Failed, err
 }
 
 // call runs one command and decodes its answer into out.

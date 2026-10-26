@@ -15,6 +15,7 @@ struct Failure: Encodable {
         case write
         case mismatch
         case delete
+        case read
     }
 
     let id: String

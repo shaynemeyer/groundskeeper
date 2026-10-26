@@ -3,6 +3,7 @@
 //   photos-helper list --source <source>
 //   photos-helper analyze --source <source> < ids.json
 //   photos-helper thumbnail --source <source> --out <dir> < ids.json
+//   photos-helper hash --source <source> < ids.json
 //   photos-helper delete --source <source> < requests.json
 //   photos-helper access
 import Foundation
@@ -11,6 +12,7 @@ let usage = """
     usage: photos-helper list --source <source>
            photos-helper analyze --source <source> < ids.json
            photos-helper thumbnail --source <source> --out <dir> < ids.json
+           photos-helper hash --source <source> < ids.json
            photos-helper delete --source <source> < requests.json
            photos-helper access
     <source> is device (the iPhone on USB) or mac-library.
@@ -18,7 +20,7 @@ let usage = """
     """
 
 enum Command: String {
-    case list, analyze, thumbnail, delete
+    case list, analyze, thumbnail, hash, delete
 }
 
 func usageError() -> Never {
@@ -65,7 +67,7 @@ guard let command = args.first.flatMap(Command.init), let flags = parseFlags(arg
 else { usageError() }
 let allowed: Set<String> = command == .thumbnail ? ["source", "out"] : ["source"]
 guard Set(flags.keys) == allowed else { usageError() }
-let ids = command == .analyze || command == .thumbnail ? readInput([String].self) : []
+let ids = [.analyze, .thumbnail, .hash].contains(command) ? readInput([String].self) : []
 let requests = command == .delete ? readInput([DeleteRequest].self) : []
 let out = flags["out"].map(outputDir)
 
@@ -78,6 +80,7 @@ if source == "mac-library" {
             emit(Listing(source: source, assets: libraryAssets().map { Asset($0, inAlbum: inAlbums.contains($0.localIdentifier)) }))
         case .analyze: emit(await analyze(ids, inLibrary: libraryAssets(withIDs: ids)))
         case .thumbnail: emit(await writeThumbnails(ids, inLibrary: libraryAssets(withIDs: ids), to: out!))
+        case .hash: emit(await hash(ids, inLibrary: libraryAssets(withIDs: ids)))
         case .delete: emit(await delete(requests, inLibrary: libraryAssets(withIDs: requests.map(\.id))))
         }
     }
@@ -93,6 +96,7 @@ let catalog = DeviceCatalog { result in
     case .list: emit(Listing(source: "device", assets: files.map(Asset.init)))
     case .analyze: Task { emit(await analyze(ids, in: files)) }
     case .thumbnail: Task { emit(await writeThumbnails(ids, in: files, to: out!)) }
+    case .hash: Task { emit(await hash(ids, in: files)) }
     case .delete: Task { emit(await delete(requests, in: files)) }
     }
 }

@@ -89,6 +89,24 @@ func TestAnalyze(t *testing.T) {
 	}
 }
 
+func TestHash(t *testing.T) {
+	f := &fakeHelper{file: "hash-device.json"}
+	hashes, failed, err := f.helper(SourceDevice).Hash(context.Background(), []string{"202610__/IMG_0001.HEIC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.args[1] != "hash" || string(f.stdin) != `["202610__/IMG_0001.HEIC"]` {
+		t.Errorf("args %q, stdin %s", f.args, f.stdin)
+	}
+	want := "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	if len(hashes) != 1 || hashes[0].SHA256 != want {
+		t.Errorf("got %+v", hashes)
+	}
+	if len(failed) != 1 || failed[0].Reason != "read" {
+		t.Errorf("got %+v", failed)
+	}
+}
+
 func TestHelperErrorKind(t *testing.T) {
 	f := &fakeHelper{file: "error-locked.json", err: errors.New("exit status 1")}
 	_, err := f.helper(SourceDevice).List(context.Background())

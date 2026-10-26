@@ -7,18 +7,25 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 ### Built
 
 - **Increment 1:** `internal/iphone/photos.go` runs `photos-helper` (`Helper{Path, Source, Run}`) and decodes `list` into `[]Asset` and `analyze` into `[]Analysis` plus `[]Failure`. An `{"error": kind}` answer becomes `ErrNoDevice`, `ErrLocked`, `ErrDenied` or `ErrTimeout`; a helper that dies without one is `ErrHelper`. `Distance` is Vision's feature-print distance, the squared Euclidean distance of the float32 vectors (step 10).
+- **Increment 2:** `photos-helper hash --source <source>` reads asset IDs on stdin and writes `{"source","hashes":[{id, sha256}],"failed":[{id, reason}]}`, with the new reason `read`. The device path reads each file in 4 MB chunks with `ICCameraFile.requestReadData(atOffset:length:)`; the library path streams the original `PHAssetResource` (the one `list` counts as `bytes`, now shared as `originalResource`) through `PHAssetResourceManager.requestData` with network access off. `Helper.Hash` is the Go side.
 
 ### Decisions
 
+- **A `hash` command instead of dropping SHA-256.** The plan confirms exact duplicates with SHA-256, and no helper command read the original files. The user chose adding `hash` over treating a zero feature-print distance as exact.
+- **`requestReadData`, not `requestDownload`.** Both are in the ImageCaptureCore headers (macOS 10.15+); `requestDownload` writes the photo to a file on the Mac that would then have to be deleted, while `requestReadData` hands back bytes that go straight into SHA-256.
+- **Library hashing never goes to iCloud,** keeping the no-network rule. An original that isn't on the Mac fails with `read`, and Go leaves it out of exact-duplicate groups.
 - **The helper's stdout is decoded even when it exits 1,** because that's where its error kind is. Its stderr is never read.
 
 ### Verified
 
 - `photos_test.go` replays hand-written helper JSON in `testdata/helper/` (device and library `list`, `analyze`, a `locked` error) and checks the arguments and stdin sent. Mapping `locked` to the wrong kind fails `TestHelperErrorKind`. The fixture guard passes over the new files.
+- `hash --source device` on the phone, for the 3 smallest files (PNG screenshots) and the largest (a 643 MB video): every hash equalled the SHA-256 of the same file read separately over go-ios AFC (`/DCIM/NNNAPPLE/<name>`, read-only) from a scratch program outside the repo, byte counts equal to `list`'s `bytes`. The video crosses 154 chunk boundaries. It took 20 s in all, about 32 MB/s. A made-up ID gave `not-found`; a missing `--source`, an extra `--out` and non-JSON stdin each exit 2. `TestHash` covers the Go side.
 
 ### Open
 
 - Decoding hasn't been run against the real helper's output yet; that comes when `gk iphone` runs it.
+- `hash --source mac-library` ran from a terminal app with Photos access and hashed the 3 oldest library photos with no failures (from the agent's terminal it answers `denied`). The hashes haven't yet been compared with an exported unmodified original.
+- Over AFC the camera roll's folders are `100APPLE` to `122APPLE`, while ImageCaptureCore names them `YYYYMM_a`, so AFC paths and helper IDs share only the file name.
 
 ## Step 10: photos-helper
 
