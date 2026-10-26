@@ -22,7 +22,7 @@ With an iPhone plugged in over USB, it also reports on the phone's apps, shared 
 ## How it stays safe
 
 - **Scans are read-only.** The report only suggests commands. Nothing is deleted unless you run a `clean` command.
-- **`clean` is a dry run unless you add `--apply`.** Browser caches go to the Trash, photos go to Recently Deleted, and site data, cookies and passwords are never touched.
+- **`clean` is a dry run unless you add `--apply`.** Browser caches go to the Trash. Photos deleted from the Mac library go to Recently Deleted; photos deleted from the iPhone over USB are gone for good, and the command says so first. Site data, cookies and passwords are never touched.
 - **Nothing leaves your Mac.** It makes no network requests, measures file sizes without reading contents, and keeps its reports and logs private to your user.
 
 ## Commands (planned)

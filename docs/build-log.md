@@ -2,6 +2,62 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 8: iPhone spike
+
+### Built
+
+- **`internal/fixtures`:**
+  - `Check` flags UDIDs (both formats), MAC addresses, emails and bundle IDs outside `com.apple.*` and `com.example.*` anywhere in a file. Phone numbers, IMEIs and MEIDs are only checked under keys that name them, and must be the fixed fakes.
+  - A guard test runs `Check` over every `testdata/` directory.
+  - `Scrub` keeps only known keys, so fields a new iOS adds are dropped. It replaces device identifiers with fakes, maps third-party bundle IDs to `com.example.appN` (the same ID across one recording), renames third-party apps and files, and refuses to return anything `Check` still flags.
+- Spike programs were throwaway and stayed in a scratch directory. Raw device responses were saved there with mode `0600` and never read into the repo.
+
+### Answers (go-ios v1.3.2, iOS 27.0.1)
+
+1. **App sizes.**
+   - go-ios's `BrowseUserApps` sends no `ReturnAttributes` and returned no size fields for any of 160 apps. A `Browse` request of our own asking for `StaticDiskUsage` and `DynamicDiskUsage` returned both for every app.
+   - Compared with Settings › iPhone Storage for two apps: the static size matched exactly (488.0 and 477.9 MB).
+   - The data size of one app read 21.86 GB, then 8.77 GB about 20 minutes later, against 8.68 GB in Settings. The user had deleted two large downloads in that app in between, and only 2 of 154 apps changed by more than 10%, so the value is live, not a cache.
+   - The other app read 1.43 GB against 1.17 GB in Settings, unchanged across readings. Unexplained.
+   - Disk: `TotalDiskCapacity` 256,000,000,000 and `AmountDataAvailable` from `com.apple.disk_usage`; AFC's `FSFreeBytes` was within 0.4%.
+2. **Uninstall.** `installationproxy.Uninstall` took about 0.4 s (`RemovingApplication`, `GeneratingApplicationMap`). The phone showed no prompt; the icon disappeared. The app was gone from the next app list, and free space grew by 2,092,937,216 bytes against the app's reported 1,996,226,560 (about 5% more, from one reading).
+3. **Offload.** Not possible over USB. go-ios has no such command. libimobiledevice's `instproxy_archive` (zip the app on the device, then uninstall) is not the same as Offload anyway, and iOS 27 answers both `Archive` (sent for a bundle ID that doesn't exist) and the read-only `LookupArchives` with `UnknownCommand`. Offloading stays a report-only tip.
+4. **PhotoKit (Mac library).**
+   - The first run, from a terminal inside VS Code, got `.denied` with no prompt. The TCC log showed why: the responsible process was VS Code, which uses the hardened runtime without `com.apple.security.personal-information.photos-library`, so "Policy disallows prompt".
+   - From Terminal.app, the prompt appeared and access was granted. `list` worked, and `PHAssetResource`'s undocumented `fileSize` key returned sizes.
+   - The user's phone doesn't use iCloud Photos, so the Mac library holds almost nothing of theirs. `analyze` moves to step 10. `delete` wasn't tested, because a test image would upload to iCloud for a path this user doesn't use.
+5. **ImageCaptureCore (iPhone over USB).**
+   - Works from any terminal, with no Photos access involved. The phone must be unlocked: opening a session on a locked phone fails with code -9943 until the "access restriction removed" callback.
+   - 1,162 files were listed in under a second, with size, dimensions, date and burst ID, and the phone reports `cameraDeviceCanDeleteOneFile`.
+   - A throwaway photo, matched by exact size and timestamp, was deleted (`ICDeleteSuccessful`, 114 ms).
+   - **The delete is permanent.** It was gone from the library and not in Recently Deleted or Recovered, while a second throwaway deleted on the phone itself did appear in Recently Deleted.
+6. **Tunnel.** Not needed. Device info, disk space, the app list, uninstall and shared files all worked over plain USB with no tunnel running. go-ios's CLI only looks up a tunnel for developer services (`needsAutomaticTunnelInfo` in `cli_device_resolution.go`). `make install-tunnel` and the root LaunchDaemon are dropped.
+
+### Problems found
+
+- **Shared files all looked empty.**
+  - Root cause: house_arrest falls back to documents-only access for App Store apps, listing `/` is then refused, and go-ios's `WalkDir` silently skips permission-denied errors. Listing `/Documents` returned entries, and walking it gave real sizes (the largest was 656.9 MB).
+  - Also, `BrowseFileSharingApps` doesn't filter: it returned 442 apps, and only 21 set `UIFileSharingEnabled`.
+- **Device identifiers in output.** ImageCaptureCore's error text contains the device name, and go-ios logs the UDID at INFO level, which leaked once into the session's terminal output (not into any file in the repo). Step 9 must report these errors by kind and keep go-ios's logging out of Groundskeeper's output.
+- **The ImageCaptureCore `didRemove` callback arrives before the delete completion**, so the helper must wait for the completion.
+
+### Decisions
+
+- go-ios alone, no libimobiledevice fallback.
+- Photo deletes on the phone are permanent; step 11 decides how strongly to guard them.
+- The fixture recorder (the part that saves go-ios responses through `Scrub`) is built with the real go-ios code in step 9, so it records the requests step 9 actually makes.
+
+### Verified
+
+- `go test -race ./...` passes.
+- Planting a file with a MAC address and a third-party bundle ID in a `testdata/` directory made the guard test fail, naming both.
+- Making `Scrub` keep `WiFiAddress` made the scrubber tests fail, naming the MAC address.
+
+### Open
+
+- Why one app's data size differs from iPhone Storage by 18%.
+- PhotoKit `delete` and Vision `analyze` are untested (steps 10 and 11).
+
 ## After step 7: private launchd log
 
 - **Problem:** `~/Library/Logs/groundskeeper.launchd.log` was `-rw-r--r--`, readable by other users, while every other file was `0600`. launchd created it with default permissions. It holds the scan summary: free space, report path and largest item names.

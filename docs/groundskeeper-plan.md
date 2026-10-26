@@ -199,13 +199,14 @@ flowchart TD
 ### Connecting
 
 - **Library:** [go-ios](https://pkg.go.dev/github.com/danielpaulus/go-ios), a pure-Go implementation of Apple's device protocols. It covers device detection, disk space, listing installed apps, uninstalling by bundle ID, and file access to app containers.
-- **iOS 17 and later** requires a tunnel to be running before go-ios can talk to the phone, started as root (`sudo ios tunnel start`). `make install-tunnel` installs this as a LaunchDaemon so it's always available; otherwise `groundskeeper iphone` explains how to start it.
+- **No tunnel needed.** go-ios's iOS 17+ tunnel (root) is only for developer services. Everything Groundskeeper uses (lockdown values, `com.apple.disk_usage`, AFC, installation_proxy, house_arrest) works over plain USB on iOS 27.0.1 (spike, step 8).
 - The phone must be **unlocked and trusted** ("Trust This Computer"). If it isn't, the tool says so and exits cleanly.
-- **Fallback:** libimobiledevice CLIs (`ideviceinfo`, `ideviceinstaller`), if go-ios can't do something on a given iOS version.
+- **No fallback.** go-ios covered every spike question, so the libimobiledevice CLIs aren't used.
 
 ### Storage and apps
 
-- **Device storage:** total and available space.
+- **Device storage:** total and available space, from the lockdown domain `com.apple.disk_usage` (`TotalDiskCapacity`, `AmountDataAvailable`).
+- **Sizes need `ReturnAttributes`.** go-ios's `BrowseUserApps` returns no sizes, so Groundskeeper sends its own installation_proxy `Browse` asking for `StaticDiskUsage` and `DynamicDiskUsage`. The app size matches iPhone Storage exactly; the data size follows real changes within minutes but can differ from iPhone Storage (one app read 1.43 GB against 1.17 GB), so the report calls it the size iOS reports over USB.
 - **Per-app size:** the app itself (static) and its documents and data (dynamic). Offline downloads and caches hide in the data size.
 - **Probably unused:** iOS doesn't expose "Last Used" over USB, so each scan saves every app's data size, and an app whose data size hasn't changed in 120 days or more is flagged as probably unused. Apps you open regularly almost always write something, so their size changes. The report labels this as an estimate, suggests confirming the Last Used date in Settings › General › iPhone Storage, and only shows the flag once there are 120 days of history.
 - **Never flagged:** Apple's apps and anything in `iphoneKeep`.
@@ -213,11 +214,12 @@ flowchart TD
 **Uninstalling (opt-in):**
 - `groundskeeper clean iphone-apps <bundleID>...` takes explicit bundle IDs. There's no "remove everything flagged" option.
 - It's a dry run unless `--apply` is given. With `--apply`, it asks for confirmation for each app, showing the app's name and the data that will be lost.
-- Uninstalling deletes the app's data permanently, unlike the Trash. The confirmation says so, and recommends **offloading in iPhone Storage** instead for apps whose data you want to keep, since offloading isn't available over USB (to be confirmed in the spike).
+- Uninstalling deletes the app's data permanently, unlike the Trash. The confirmation says so, and recommends **offloading in iPhone Storage** instead for apps whose data you want to keep. Offloading isn't available over USB: iOS 27 answers installation_proxy's `Archive` and `LookupArchives` with `UnknownCommand`.
+- The phone shows no prompt when an app is uninstalled; its icon just disappears.
 
 ### Shared app files
 
-- Apps that share files with the Mac (the ones that show up in Finder's Files tab for the phone) expose a Documents container.
+- Apps that share files with the Mac (the ones that show up in Finder's Files tab for the phone) expose a Documents container. go-ios's `BrowseFileSharingApps` doesn't filter (it returned every app), so Groundskeeper keeps only apps with `UIFileSharingEnabled`, and walks `/Documents`: listing `/` is refused, and go-ios's `WalkDir` hides that error, so every app would look empty.
 - The report lists the largest of these containers and their biggest files. This section is read-only; deleting files is left to Finder or the app itself.
 - Data inside other apps' private storage, such as streaming downloads, caches and Messages attachments, isn't reachable over USB. The report links to the iPhone Storage steps for those.
 
@@ -254,7 +256,7 @@ flowchart TD
 
 **iCloud Photos on (`"mac-library"`):** the phone's library is the same one synced to the Mac's Photos app, so duplicates are found and deleted there, and the deletions sync to the phone. Nothing on the phone is touched directly. This also works with "Optimize iPhone Storage", where the phone doesn't hold all the originals.
 
-**iCloud Photos off (`"device"`):** the photos are read from the phone's camera roll over USB, and deleted through Apple's ImageCaptureCore framework, which is the same mechanism Image Capture uses for "Delete after import". Files are never deleted directly from the phone's camera folder, because that bypasses the phone's photo database and can corrupt it.
+**iCloud Photos off (`"device"`):** the photos are read from the phone's camera roll over USB, and deleted through Apple's ImageCaptureCore framework, which is the same mechanism Image Capture uses for "Delete after import". The phone must be unlocked; ImageCaptureCore's error text contains the device name, so it's reported as "unlock your iPhone" and never passed through. **These deletions are permanent:** they skip the phone's Recently Deleted (spike, step 8). Files are never deleted directly from the phone's camera folder, because that bypasses the phone's photo database and can corrupt it.
 
 **Swift helper (`photos-helper`).** Decoding HEIC, Vision analysis, PhotoKit and ImageCaptureCore are only available to Swift or Objective-C, so a small command-line Swift helper does those steps. The Go tool runs it and exchanges JSON over stdout. Its commands:
 - `list`: asset IDs, dates, dimensions, favorite and album status, and file sizes
@@ -292,16 +294,17 @@ sequenceDiagram
   P-->>U: System confirmation (Mac library path)
   P-->>S: Done
   S-->>G: Result
-  G-->>U: Moved to Recently Deleted for 30 days
+  G-->>U: Recently Deleted (Mac library) or permanently deleted (device)
 ```
 
 - The review runs in the terminal with Bubble Tea. Thumbnails are shown inline in iTerm2 or Kitty using their image protocols; in other terminals, pressing space opens the group in Quick Look (`qlmanage -p`).
-- Deleting from the Mac Photos library sends photos to **Recently Deleted** for 30 days on every device. The device path is confirmed in the spike; if ImageCaptureCore deletions are permanent there, the confirmation says so.
+- Deleting from the Mac Photos library sends photos to **Recently Deleted** for 30 days on every device. This path is built but wasn't tested against a real library in the spike.
+- Deleting from the phone over USB is **permanent**. The confirmation says so plainly, and how strongly to guard it (a typed confirmation, or importing to the Mac first) is decided in step 11.
 
 ### When it runs
 
 - The **scheduled report** includes the iPhone storage and apps section only if the phone happens to be connected and unlocked; otherwise it shows the last saved iPhone data with its date.
-- **Photo scanning never runs on the schedule.** It's heavy, and macOS grants Photos access to the terminal app you run it from, which a background job doesn't have. Run `groundskeeper iphone` from the terminal when you want it.
+- **Photo scanning never runs on the schedule.** It's heavy, and the Mac library path needs Photos access, which macOS grants to the terminal app you run it from and a background job doesn't have. Run `groundskeeper iphone` from the terminal when you want it.
 
 ### Spike before building (about a day)
 
@@ -314,6 +317,8 @@ Confirm on the current iOS version:
 6. Whether the iOS 17 tunnel can run reliably as a LaunchDaemon.
 
 Any feature that fails the spike is dropped or downgraded to a report-only recommendation.
+
+**Results (iOS 27.0.1, details in the [build log](build-log.md)):** 1. App size matches iPhone Storage exactly, data size approximately, both only with `ReturnAttributes`. 2. Uninstall works, with no prompt on the phone. 3. Offloading isn't possible over USB, so it stays a report-only tip. 4. PhotoKit `list` works from Terminal; `analyze` moves to step 10 and `delete` wasn't tested. 5. ImageCaptureCore lists and deletes, and deletes are permanent. 6. No tunnel is needed, so there's no root daemon.
 
 **Config additions**
 - `photosSource`: `"mac-library"` or `"device"`, set by the first-run question.
@@ -379,7 +384,7 @@ Clean (dry run unless --apply)
 Setup
   setup photos   Re-ask whether iCloud Photos is on
   config         Show the config file path and current values
-  doctor         Check permissions, tunnel and schedule
+  doctor         Check permissions and schedule
 
 Help topics
   safety     What groundskeeper never deletes, and how dry runs work
@@ -389,7 +394,7 @@ Help topics
 
 - Running `groundskeeper` with no subcommand runs `scan`, so launchd and `gk` stay short.
 - Groups use Cobra's [command groups](https://pkg.go.dev/github.com/spf13/cobra#Group). Help topics are commands with no `Run`, which Cobra lists under "Additional help topics" ([docs](https://cobra.dev/docs/how-to-guides/working-with-commands/)).
-- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, whether `outputDir` is in a synced folder, and whether both log files are readable only by the user. The iOS 17 tunnel, Photos access and `photos-helper` checks are added with iPhone mode (steps 9 to 11). Warnings exit 0; a failed check makes `doctor` exit with an error.
+- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, whether `outputDir` is in a synced folder, and whether both log files are readable only by the user. The Photos access and `photos-helper` checks are added with iPhone mode (steps 9 to 11). Warnings exit 0; a failed check makes `doctor` exit with an error.
 
 ### Help content
 
@@ -470,7 +475,7 @@ With Full Disk Access, Groundskeeper can see browser profiles, app containers, M
 - Raw, unscrubbed recordings are written only to a temporary directory outside the repo, never to `testdata/`.
 
 **Privileges and dependencies**
-- Only the iOS 17 tunnel runs as root, as its own LaunchDaemon. The `groundskeeper` binary never calls `sudo`.
+- Nothing runs as root. The spike showed the iOS 17+ tunnel isn't needed, and the `groundskeeper` binary never calls `sudo`.
 - Dependencies are limited to those named in this plan. `govulncheck ./...` ([docs](https://go.dev/doc/tutorial/govulncheck)) runs in `make test`.
 
 ## Logging and metrics
@@ -578,7 +583,7 @@ A LaunchAgent at `~/Library/LaunchAgents/com.lot86.groundskeeper.plist`:
 
 **macOS privacy.** Downloads, Documents and Desktop are privacy-protected, so a background job can't read them by default. Either grant Full Disk Access to `~/bin/groundskeeper` in System Settings → Privacy & Security, or the tool skips those folders and lists them under Skipped paths.
 
-**Photos access.** The first time `photos-helper` reads the Mac Photos library, macOS asks to grant Photos access to the terminal app you ran it from (iTerm2 or Terminal). That's one reason photo scanning is on-demand only.
+**Photos access.** The first time `photos-helper` reads the Mac Photos library, macOS asks to grant Photos access to the terminal app you ran it from (Terminal or iTerm2). A terminal inside a hardened app without the Photos entitlement, such as VS Code, is denied without a prompt (the TCC log says the entitlement is missing). That's one reason photo scanning is on-demand only. The device path (ImageCaptureCore) needs no Photos access.
 
 ## Project layout
 
@@ -611,7 +616,7 @@ groundskeeper/
     browsers.go                    # browser + profile discovery, tiered sizing
     apps.go                        # last-used dates, leftovers, install-source detection
   internal/iphone/
-    device.go                      # go-ios connection, tunnel check, trust/unlock errors
+    device.go                      # go-ios connection, trust/unlock errors
     apps.go                        # app sizes, unused-app proxy
     files.go                       # shared app containers
     photos.go                      # runs photos-helper, grouping, best-shot scoring
@@ -638,8 +643,7 @@ groundskeeper/
 |---|---|
 | `build` | `go build -o bin/groundskeeper ./cmd/groundskeeper`, plus `swift build -c release` for `photos-helper` |
 | `install` | Copies the binary to `~/bin`, adds a `gk` symlink, installs zsh completion for both names in `~/.zsh/completions` (already done; the next part is step 7), fills `$HOME` into the plist, copies the plist to `~/Library/LaunchAgents`, and runs `launchctl bootstrap gui/$(id -u)` |
-| `install-tunnel` | Installs the go-ios tunnel as a LaunchDaemon (needs `sudo`), for iOS 17 and later |
-| `uninstall` | Runs `launchctl bootout`, then removes the plist, binaries and tunnel daemon |
+| `uninstall` | Runs `launchctl bootout`, then removes the plist and binaries |
 | `run` | Runs once now with `-open` |
 | `test` | `go test ./...`, then `govulncheck ./...` |
 
@@ -652,8 +656,8 @@ groundskeeper/
 5. **Opt-in `clean browsers` command**, with tests confirming it can never touch paths outside the allowlist (including through symlinks and `..`) and refuses while the browser is running.
 6. **History and deltas**, plus the "growing fastest" section. Metrics are added to snapshots here, along with the report's Run details section and the `stats` and `logs` commands.
 7. **launchd setup and notification**, with the Makefile `install` and `uninstall` targets, plus `doctor`, the help topics and zsh completion. At this point the Mac side is complete.
-8. **iPhone spike** (about a day), covering the six questions in [iPhone mode](#iphone-mode). The fixture recorder, its scrubber and the fixture guard test are built here, before any recording is saved to `testdata/`.
-9. **iPhone storage, apps and shared files** in the report, then `clean iphone-apps`.
+8. **iPhone spike** (about a day), covering the six questions in [iPhone mode](#iphone-mode). The fixture scrubber and the fixture guard test are built here, before any recording is saved to `testdata/`.
+9. **iPhone storage, apps and shared files** in the report, then `clean iphone-apps`. The fixture recorder, which saves go-ios responses through the scrubber, comes first.
 10. **`photos-helper`** in Swift, with its `list`, `analyze`, `thumbnail` and `delete` commands.
 11. **Photo grouping and best-shot scoring** in Go, then the terminal review and `clean photos`.
 12. **Tests** against a fake home directory made with `t.TempDir()`, covering artifact detection rules, staleness, unused-app dating and install-source detection, hardlink dedupe, Ollama manifest parsing and delta math. iPhone tests use recorded go-ios responses and canned `photos-helper` JSON, so they run without a phone. CLI tests check that every command has a summary, description and at least one example, and that output has no color codes when stdout isn't a terminal.
@@ -681,4 +685,4 @@ groundskeeper/
 - ~~Schedule~~: decided, Monday and Thursday at 9:00 AM (edit the plist and reinstall to change).
 - ~~Notification frequency~~: decided, every scheduled run; interactive runs only notify with `--notify`.
 - Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).
-- Whether to keep the libimobiledevice fallback, or rely on go-ios alone if the spike goes well.
+- ~~libimobiledevice fallback~~: decided, go-ios alone (it covered every spike question).

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Build steps 1 to 7 of `docs/groundskeeper-plan.md` are done, so the Mac side is complete: CLI skeleton, logging, size engine, all Mac scanners, the HTML report, `clean browsers` (`internal/clean`), history with metrics (`internal/history`, `internal/metrics`), the `history`, `stats` and `logs` commands, the launchd schedule (`launchd/`), notifications (`internal/notify`), `doctor` (`internal/doctor`) and the help topics. Next is the iPhone spike (step 8). CLI tests keep scans inside a fake home through the `appDirs` and `toolRunner` hooks in `internal/cli/scan.go`. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
+Build steps 1 to 7 of `docs/groundskeeper-plan.md` are done, so the Mac side is complete: CLI skeleton, logging, size engine, all Mac scanners, the HTML report, `clean browsers` (`internal/clean`), history with metrics (`internal/history`, `internal/metrics`), the `history`, `stats` and `logs` commands, the launchd schedule (`launchd/`), notifications (`internal/notify`), `doctor` (`internal/doctor`) and the help topics. Step 8, the iPhone spike, is done too: its answers are in the plan's "Spike before building" section and the build log, and `internal/fixtures` holds the fixture scrubber (`Scrub`) and the `testdata/` guard (`Check`). Next is step 9, iPhone storage, apps and shared files. CLI tests keep scans inside a fake home through the `appDirs` and `toolRunner` hooks in `internal/cli/scan.go`. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
 
 After each build step, add an entry at the top of `docs/build-log.md`: what was built, decisions, problems found (with the evidence that proved the root cause), what was verified and how, and what is still open. Keep personal paths and data out of it.
 
@@ -20,7 +20,7 @@ Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that 
 - `./bin/groundskeeper scan --dry`: scan this Mac without writing the report or log
 - `go test -race ./...`: the size engine and scanners are concurrent
 
-Still to come: `make install-tunnel` (step 9), and `swift build` for `photos-helper` (step 10).
+Still to come: `swift build` for `photos-helper` (step 10). There is no `install-tunnel`: the spike showed go-ios needs no tunnel for what Groundskeeper does.
 
 Go is pinned to the latest patch release in `go.mod` (`go 1.27.3`). `GOTOOLCHAIN=auto` downloads it if needed. When `govulncheck` reports a vulnerability, upgrade the Go patch release or the module it names rather than suppressing it.
 
@@ -47,6 +47,7 @@ Groundskeeper runs with Full Disk Access and reads browser profiles, app contain
 
 - **Measure, never read contents.** Scanners only stat files and add up their sizes. Never open, parse or copy cookie, password, history, Local Storage, IndexedDB, keychain or Messages files. Reading files is allowed only where the plan calls for it: Ollama manifests, `pyvenv.cfg`, `Info.plist` and Hugging Face directory names.
 - **No network access.** The tool makes no outbound requests: no telemetry, no update checks, no remote reports. The only external connection is go-ios over USB to the local iPhone.
+- **Device names stay out of output.** ImageCaptureCore's error messages contain the iPhone's name, and go-ios logs its UDID at INFO level. Report these errors by kind, and keep go-ios logging out of Groundskeeper's output.
 - **Never leak secrets into output.** Reports, snapshots, logs, notifications and `photos-helper` JSON contain paths, sizes and dates only. Never include file contents, environment variables, tokens, or command output that might hold them.
 - **Private file permissions.** Create the state, report and log directories with `0700` and their files with `0600`. Reports list paths that reveal project, app and account names.
 - **Escape the HTML report.** Render it with `html/template`, never `text/template` or string concatenation, because file and folder names are attacker-controllable. See https://pkg.go.dev/html/template.
@@ -55,7 +56,7 @@ Groundskeeper runs with Full Disk Access and reads browser profiles, app contain
 - **Validate before deleting.** `clean` commands resolve symlinks (`filepath.EvalSymlinks`) and confirm the real path is still inside the allowlisted root before moving anything. Bundle IDs and asset IDs are checked against the last snapshot or review selection. Arbitrary input is never accepted.
 - **No encryption at rest, by design.** FileVault covers it. `doctor` warns if FileVault is off, and `scan` and `doctor` warn if `outputDir` is in a synced folder (iCloud Drive, CloudStorage, Desktop, Documents).
 - **Scrubbed fixtures only.** Recorded go-ios responses go through the recorder's scrubber, which removes device IDs, MAC addresses, phone numbers, emails, device names, third-party bundle IDs and file names, before anything is written to `testdata/`. `photos-helper` fixtures are written by hand. A guard test fails if `testdata/` contains anything that looks like real device or personal data.
-- **Least privilege.** Only the iOS 17 tunnel needs root, and it is a separate LaunchDaemon. The main binary never asks for `sudo`.
+- **Least privilege.** Nothing runs as root, and the binary never asks for `sudo`.
 - **Dependencies:** keep them to those named in the plan, and run `govulncheck ./...` before releases (https://go.dev/doc/tutorial/govulncheck).
 
 ## Testing approach
