@@ -21,11 +21,12 @@ test:
 run: build
 	./bin/groundskeeper scan --open
 
-# Installs the binary, the gk alias, zsh completion for both names, and the
+# Installs the binary, photos-helper, the gk alias, zsh completion for both names, and the
 # LaunchAgent that runs the read-only scan on Mondays and Thursdays.
 install: build
 	mkdir -p $(BIN_DIR) $(COMPLETIONS_DIR) $(dir $(PLIST))
 	install -m 0755 bin/groundskeeper $(BIN_DIR)/groundskeeper
+	install -m 0755 bin/photos-helper $(BIN_DIR)/photos-helper
 	ln -sf groundskeeper $(BIN_DIR)/gk
 	$(BIN_DIR)/groundskeeper completion zsh \
 		| sed -e '1s/^#compdef groundskeeper$$/#compdef groundskeeper gk/' \
@@ -43,4 +44,4 @@ install: build
 
 uninstall:
 	-launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null
-	rm -f $(PLIST) $(BIN_DIR)/groundskeeper $(BIN_DIR)/gk $(COMPLETIONS_DIR)/_groundskeeper
+	rm -f $(PLIST) $(BIN_DIR)/groundskeeper $(BIN_DIR)/gk $(BIN_DIR)/photos-helper $(COMPLETIONS_DIR)/_groundskeeper

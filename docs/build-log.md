@@ -9,10 +9,14 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - **Increment 1:** the Swift package `helpers/photos-helper` (Swift 6 language mode, macOS 26+) with `list --source device`. It opens the first iPhone on USB with ImageCaptureCore and writes `{"source","assets":[{id, created, width, height, bytes, sidecarBytes, burst}]}` to stdout. Errors are `{"error": "no-device" | "locked" | "timeout"}` with exit 1; bad arguments print usage and exit 2. `make build` also builds it into `bin/photos-helper`.
 - **Increment 2:** `analyze --source device` reads a JSON array of asset IDs on stdin, fetches a 512-pixel thumbnail of each from the phone, and runs Vision's `GenerateImageFeaturePrintRequest` and `CalculateImageAestheticsScoresRequest` (the Swift API, macOS 15+). It writes `{"source","analyses":[{id, featurePrint, aesthetics, utility}],"failed":[{id, reason}]}`, where reason is `not-found`, `thumbnail` or `vision`.
 - **Increment 3:** `thumbnail --source device --out <dir>` reads asset IDs on stdin and saves the phone's 1024-pixel JPEG thumbnail of each, without re-encoding. It writes `{"source","thumbnails":[{id, path}],"failed":[{id, reason}]}`; `write` joins the failure reasons. Flags are parsed as `--name value` pairs, and unknown or missing flags exit 2.
+- **Increment 6 (before 5):** `make install` copies `bin/photos-helper` to `~/bin/photos-helper` (`0755`) and `make uninstall` removes it. `doctor.HelperPath` names that path for the Go side to run, and `gk doctor` has a "Photos helper" check: missing, or not an executable file, is a warning with "Run make install" as the fix.
 - **Increment 4:** `delete --source device` reads `[{id, bytes, created}]` on stdin, refuses any asset whose size differs or whose date is more than a second off (`mismatch`), and deletes the rest in one `requestDeleteFiles` call. It writes `{"source","deleted":[ids],"failed":[{id, reason}]}`, with `delete` for files the phone didn't report as deleted.
 
 ### Decisions
 
+- **The helper lives in `~/bin`, next to `groundskeeper`.** The plan only said "the install location"; one folder keeps install, uninstall and Full Disk Access advice in one place. It's run by absolute path, so being on `$PATH` doesn't matter.
+- **A missing helper is a warning, not a failure.** The Mac scan and the schedule don't use it, and a failed check makes `doctor` exit with an error.
+- **The check doesn't run the helper.** Stat and the execute bit are enough to catch a missing or half-finished install; running it would add a process for little gain.
 - **The asset ID is the folder and file name on the phone.** A probe over 1,162 files on two sessions found `originatingAssetID` and `fingerprint` empty for every file and `ptpObjectHandle` the same for every file. Folder and file name was unique for every file and identical across both sessions (same SHA-256 of the sorted list). `delete` should still check size and date before deleting, as the step 8 spike did.
 - **No phone is detected with a 10 s timeout**, not `deviceBrowserDidEnumerateLocalDevices`: that callback fired with zero devices before the phone was added, on every run.
 - **Open errors aren't final.** With the phone unlocked, each run still got "access restricted", an open error -9943, then "access restriction removed", and the catalog arrived without retrying. So `list` waits up to 120 s for the catalog and reports `locked` only if the phone is still restricted then.
@@ -29,6 +33,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Bad arguments exit 2 with usage.
 - `thumbnail` for the 5 newest photos plus a made-up ID, into a new nested directory: 5 JPEGs at 768x1024 or 1018x764, both directories `drwx------`, files `-rw-------`, names 32 hex characters, the made-up ID `not-found`. ImageIO found no GPS dictionary in any of them. Into a read-only directory, every photo failed with `write`. A missing `--out`, `--out` on `list`, an unknown flag and `--source mac-library` each exit 2.
 - `delete`, on two throwaway photos the user took for the test, each the only asset from the last hour: a size one byte off and a date five seconds off were each refused as `mismatch` and the photo stayed. The exact request deleted it: the second run printed it as deleted with exit 0, and the next listing no longer had it (1,159 to 1,158). An unknown ID gave `not-found`; input without `created` exited 2.
+- Increment 6: `TestPhotosHelper` covers missing, not executable and installed; it fails with the execute-bit check removed. `make test` passes. After `make install`, `~/bin/photos-helper` is `-rwxr-xr-x`, runs and prints usage (exit 2), and `gk doctor` shows "ok Photos helper" and exits 0.
 - `analyze` on all 1,162 assets plus one made-up ID: 140 s, 1,162 analyses, every print 3,072 bytes, the made-up ID reported as `not-found`.
 
 ### Problems found
@@ -47,6 +52,7 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 - Whether deleting a Live Photo also removes its video sidecar. Both test photos had no sidecars.
 - `thumbnail` doesn't tighten the permissions of an `--out` directory that already exists, and doesn't delete old thumbnails. Step 11's Go side creates and cleans that directory.
 - Sharpness and face quality for best-shot scoring aren't computed yet.
+- Increment 5 (`--source mac-library` through PhotoKit) and the Photos access check in `doctor` that goes with it.
 
 ## Step 9: iPhone storage, apps and shared files
 

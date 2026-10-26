@@ -28,10 +28,11 @@ func newDoctorCmd(global *globalOptions) *cobra.Command {
 		Use:     "doctor",
 		GroupID: groupSetup,
 		Short:   "Check permissions, the schedule and where reports go",
-		Long: `Checks that the binary is installed, whether protected folders can be read
-(Full Disk Access), that the schedule is loaded and when it runs next, when
-the last scheduled run happened, whether FileVault is on, and that the report
-folder doesn't sync off this Mac. Each problem comes with how to fix it.
+		Long: `Checks that the binary and photos-helper are installed, whether protected
+folders can be read (Full Disk Access), that the schedule is loaded and when
+it runs next, when the last scheduled run happened, whether FileVault is on,
+and that the report folder doesn't sync off this Mac. Each problem comes with
+how to fix it.
 
 Full Disk Access is checked for whatever runs doctor, usually your terminal.
 The schedule needs it granted to ~/bin/groundskeeper separately.

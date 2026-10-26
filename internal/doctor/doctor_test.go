@@ -188,3 +188,24 @@ func TestLogFilesMustBePrivate(t *testing.T) {
 		t.Errorf("private logs = %+v", c)
 	}
 }
+
+func TestPhotosHelper(t *testing.T) {
+	e := env(t, fake{})
+	if c := photosHelper(e); c.Status != Warn || !strings.Contains(c.Detail, "missing") || !strings.Contains(c.Fix, "make install") {
+		t.Errorf("missing = %+v", c)
+	}
+	path := HelperPath(e.Home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := photosHelper(e); c.Status != Warn || !strings.Contains(c.Detail, "executable") {
+		t.Errorf("not executable = %+v", c)
+	}
+	os.Chmod(path, 0o755)
+	if c := photosHelper(e); c.Status != OK || c.Detail != path {
+		t.Errorf("installed = %+v", c)
+	}
+}

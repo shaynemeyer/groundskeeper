@@ -399,7 +399,7 @@ Help topics
 
 - Running `groundskeeper` with no subcommand runs `scan`, so launchd and `gk` stay short.
 - Groups use Cobra's [command groups](https://pkg.go.dev/github.com/spf13/cobra#Group). Help topics are commands with no `Run`, which Cobra lists under "Additional help topics" ([docs](https://cobra.dev/docs/how-to-guides/working-with-commands/)).
-- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, whether `outputDir` is in a synced folder, and whether both log files are readable only by the user. The Photos access and `photos-helper` checks are added with iPhone mode (steps 9 to 11). Warnings exit 0; a failed check makes `doctor` exit with an error.
+- `doctor` checks, and explains how to fix: the installed binary, Full Disk Access (for whatever runs `doctor`, usually the terminal), whether the LaunchAgent is loaded and its next run, the last scheduled run, whether FileVault is on, whether `outputDir` is in a synced folder, and whether both log files are readable only by the user. The `photos-helper` check (installed and executable; a warning, since only photo scanning needs it) was added in step 10. The Photos access check comes with the `mac-library` source. Warnings exit 0; a failed check makes `doctor` exit with an error.
 
 ### Help content
 
@@ -457,7 +457,7 @@ With Full Disk Access, Groundskeeper can see browser profiles, app containers, M
 - External tools are looked up in `$PATH`, then in `/opt/homebrew/bin`, `/usr/local/bin` and `/opt/podman/bin`, because launchd jobs only get `/usr/bin:/bin:/usr/sbin:/sbin`. `brew` runs with `HOMEBREW_NO_AUTO_UPDATE=1` so a scan never makes it update over the network.
 - External tools (`git`, `mdls`, `plutil`, `ps`, `brew`, `trash`, `podman`, `osascript`, `photos-helper`, `qlmanage`) are started with [`exec.CommandContext`](https://pkg.go.dev/os/exec) and separate arguments, never through `sh -c`.
 - Notification text is passed to `osascript` as an argument (`on run argv`), not inserted into the AppleScript source.
-- `photos-helper` is called by absolute path from the install location, not looked up through `$PATH`.
+- `photos-helper` is called by absolute path from the install location (`~/bin/photos-helper`, `doctor.HelperPath`), not looked up through `$PATH`.
 
 **What it deletes**
 - `clean browsers` only acts on the folders the Browsers scanner lists for the cache tier (and offline tier with `--include-offline`). It refuses a path that isn't clean, is itself a symlink, or whose resolved location is outside the browsers' own folders, and it never follows a symlinked profile folder. Anything refused is logged.
@@ -647,7 +647,7 @@ groundskeeper/
 | Target | Does |
 |---|---|
 | `build` | `go build -o bin/groundskeeper ./cmd/groundskeeper`, plus `swift build -c release` for `photos-helper` |
-| `install` | Copies the binary to `~/bin`, adds a `gk` symlink, installs zsh completion for both names in `~/.zsh/completions` (already done; the next part is step 7), fills `$HOME` into the plist, copies the plist to `~/Library/LaunchAgents`, and runs `launchctl bootstrap gui/$(id -u)` |
+| `install` | Copies the binary and `photos-helper` to `~/bin`, adds a `gk` symlink, installs zsh completion for both names in `~/.zsh/completions` (already done; the next part is step 7), fills `$HOME` into the plist, copies the plist to `~/Library/LaunchAgents`, and runs `launchctl bootstrap gui/$(id -u)` |
 | `uninstall` | Runs `launchctl bootout`, then removes the plist and binaries |
 | `run` | Runs once now with `-open` |
 | `test` | `go test ./...`, then `govulncheck ./...` |
@@ -663,7 +663,7 @@ groundskeeper/
 7. **launchd setup and notification**, with the Makefile `install` and `uninstall` targets, plus `doctor`, the help topics and zsh completion. At this point the Mac side is complete.
 8. **iPhone spike** (about a day), covering the six questions in [iPhone mode](#iphone-mode). The fixture scrubber and the fixture guard test are built here, before any recording is saved to `testdata/`.
 9. **iPhone storage, apps and shared files** in the report, then `clean iphone-apps`. The fixture recorder, which saves go-ios responses through the scrubber, comes first.
-10. **`photos-helper`** in Swift, with its `list`, `analyze`, `thumbnail` and `delete` commands. The device path comes first, one command at a time: (1) the package and `list --source device` (done), (2) `analyze` (done), (3) `thumbnail` (done), (4) `delete` (done), (5) the same commands for `--source mac-library` through PhotoKit, (6) installing it and the `doctor` check.
+10. **`photos-helper`** in Swift, with its `list`, `analyze`, `thumbnail` and `delete` commands. The device path comes first, one command at a time: (1) the package and `list --source device` (done), (2) `analyze` (done), (3) `thumbnail` (done), (4) `delete` (done), (5) the same commands for `--source mac-library` through PhotoKit, (6) installing it and the `doctor` check (done, ahead of 5).
 11. **Photo grouping and best-shot scoring** in Go, then the terminal review and `clean photos`.
 12. **Tests** against a fake home directory made with `t.TempDir()`, covering artifact detection rules, staleness, unused-app dating and install-source detection, hardlink dedupe, Ollama manifest parsing and delta math. iPhone tests use recorded go-ios responses and canned `photos-helper` JSON, so they run without a phone. CLI tests check that every command has a summary, description and at least one example, and that output has no color codes when stdout isn't a terminal.
 13. **Security tests,** also against a fake home directory. The ones that cover a feature are written alongside it in the steps above:

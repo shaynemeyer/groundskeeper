@@ -56,6 +56,7 @@ type Env struct {
 func Run(ctx context.Context, env Env) []Check {
 	return []Check{
 		installed(env),
+		photosHelper(env),
 		fullDiskAccess(env),
 		schedule(ctx, env),
 		lastScheduledRun(env),
@@ -78,6 +79,30 @@ func installed(env Env) Check {
 		return c
 	}
 	c.Status, c.Detail = OK, path
+	return c
+}
+
+// HelperPath is where make install puts photos-helper. Groundskeeper runs
+// it by this absolute path, never through $PATH.
+func HelperPath(home string) string {
+	return filepath.Join(home, "bin", "photos-helper")
+}
+
+// photosHelper warns rather than fails: only photo scanning needs it.
+func photosHelper(env Env) Check {
+	c := Check{Name: "Photos helper"}
+	path := HelperPath(env.Home)
+	info, err := os.Stat(path)
+	switch {
+	case err != nil:
+		c.Status, c.Detail = Warn, path+" is missing, so photo scanning won't work"
+	case !info.Mode().IsRegular() || info.Mode().Perm()&0o100 == 0:
+		c.Status, c.Detail = Warn, path+" isn't an executable file"
+	default:
+		c.Status, c.Detail = OK, path
+		return c
+	}
+	c.Fix = "Run make install in the groundskeeper repo."
 	return c
 }
 
