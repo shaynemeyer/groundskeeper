@@ -1,0 +1,33 @@
+# Rook ASCII art for the Groundskeeper terminal UI.
+# Plain ASCII only, so it renders in any terminal and font.
+# Sections are separated by lines starting with "## ". The Go code embeds
+# this file and picks a section by name. Lines starting with "#" are comments.
+
+## face
+ /\ _______ /\
+ \ /_______\ /
+ (( @ )=( @ ))
+  \   (_)   /
+   `-.___.-'
+
+## face-tiny
+(@=@)
+
+## full
+      /\ _______ /\      |
+      \ /_______\ /      |
+      (( @ )=( @ ))      |
+       \   (_)   /       |
+        `-.___.-'        |
+        /  .-.  \--------o
+       |  (   )  |       |
+        \  `-'  /        |
+         (_/ \_)   %@& /|||\
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## all-clean
+ /\ _______ /\
+ \ /_______\ /     All tidy!
+ (( @ )=( @ ))     Rook freed {freed} today.
+  \   (_)   /      {free} free on {disk}.
+   `-.___.-'
