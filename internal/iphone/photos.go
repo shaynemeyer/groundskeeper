@@ -52,6 +52,12 @@ type Analysis struct {
 	Utility      bool    `json:"utility"`
 }
 
+// Thumbnail is a JPEG photos-helper wrote for the review.
+type Thumbnail struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+}
+
 // FileHash is the SHA-256 of an asset's original file, in hex.
 type FileHash struct {
 	ID     string `json:"id"`
@@ -119,9 +125,26 @@ func (h Helper) Hash(ctx context.Context, ids []string) ([]FileHash, []Failure, 
 	return out.Hashes, out.Failed, err
 }
 
-// call runs one command and decodes its answer into out.
-func (h Helper) call(ctx context.Context, stdin []byte, out any, command string) error {
-	data, runErr := h.Run(ctx, stdin, h.Path, command, "--source", h.Source)
+// Thumbnails writes a JPEG of each asset into dir, at most 1024 pixels on
+// its longest side, and returns where, with the ones that failed.
+func (h Helper) Thumbnails(ctx context.Context, ids []string, dir string) ([]Thumbnail, []Failure, error) {
+	in, err := json.Marshal(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out struct {
+		Thumbnails []Thumbnail
+		Failed     []Failure
+	}
+	err = h.call(ctx, in, &out, "thumbnail", "--out", dir)
+	return out.Thumbnails, out.Failed, err
+}
+
+// call runs one command with flags after --source, and decodes its answer
+// into out.
+func (h Helper) call(ctx context.Context, stdin []byte, out any, command string, flags ...string) error {
+	args := append([]string{command, "--source", h.Source}, flags...)
+	data, runErr := h.Run(ctx, stdin, h.Path, args...)
 	var answer struct{ Error string }
 	if json.Unmarshal(data, &answer) == nil && answer.Error != "" {
 		return helperError(answer.Error)

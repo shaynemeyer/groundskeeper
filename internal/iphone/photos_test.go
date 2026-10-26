@@ -110,6 +110,25 @@ func TestHash(t *testing.T) {
 	}
 }
 
+func TestThumbnails(t *testing.T) {
+	f := &fakeHelper{file: "thumbnail-device.json"}
+	ids := []string{"202610__/IMG_0001.HEIC", "202610__/IMG_0002.HEIC"}
+	thumbs, failed, err := f.helper(SourceDevice).Thumbnails(context.Background(), ids, "/tmp/review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/bin/photos-helper", "thumbnail", "--source", "device", "--out", "/tmp/review"}
+	if !slices.Equal(f.args, want) {
+		t.Errorf("args %q, want %q", f.args, want)
+	}
+	if len(thumbs) != 1 || thumbs[0] != (Thumbnail{ID: ids[0], Path: "/tmp/review/3f2a.jpg"}) {
+		t.Errorf("got %+v", thumbs)
+	}
+	if len(failed) != 1 || failed[0].Reason != "thumbnail" {
+		t.Errorf("got %+v", failed)
+	}
+}
+
 func TestHelperErrorKind(t *testing.T) {
 	f := &fakeHelper{file: "error-locked.json", err: errors.New("exit status 1")}
 	_, err := f.helper(SourceDevice).List(context.Background())
