@@ -1,5 +1,6 @@
 import Foundation
 import ImageCaptureCore
+import Photos
 
 /// One photo or video. Holds only IDs, dates, dimensions and sizes: never GPS
 /// data or file contents.
@@ -12,6 +13,11 @@ struct Asset: Encodable {
     /// Size of the Live Photo video and edit files that go with this one.
     let sidecarBytes: Int64
     let burst: String?
+    /// Favorite, edited and album status come only from the Mac library: they
+    /// aren't visible over USB, so they're left out on the device path.
+    let favorite: Bool?
+    let edited: Bool?
+    let inAlbum: Bool?
 
     init(_ file: ICCameraFile) {
         id = file.assetID
@@ -21,6 +27,26 @@ struct Asset: Encodable {
         bytes = file.fileSize
         sidecarBytes = (file.sidecarFiles ?? []).compactMap { $0 as? ICCameraFile }.reduce(0) { $0 + $1.fileSize }
         burst = file.burstUUID
+        favorite = nil
+        edited = nil
+        inAlbum = nil
+    }
+
+    /// The original photo or video is bytes; everything else, such as the
+    /// Live Photo video, edits and the edited render, is sidecarBytes.
+    init(_ asset: PHAsset, inAlbum: Bool) {
+        let resources = PHAssetResource.assetResources(for: asset)
+        let original = resources.first { [.photo, .video, .audio].contains($0.type) }
+        id = asset.localIdentifier
+        created = asset.creationDate
+        width = asset.pixelWidth
+        height = asset.pixelHeight
+        bytes = original?.bytes ?? 0
+        sidecarBytes = resources.filter { $0 !== original }.reduce(0) { $0 + $1.bytes }
+        burst = asset.burstIdentifier
+        favorite = asset.isFavorite
+        edited = asset.hasAdjustments
+        self.inAlbum = inAlbum
     }
 }
 

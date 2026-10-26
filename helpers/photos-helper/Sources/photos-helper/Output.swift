@@ -27,6 +27,8 @@ enum ErrorKind: String, Error, Encodable {
     case noDevice = "no-device"
     case locked
     case timeout
+    /// Photos access for the Mac library wasn't granted.
+    case denied
 }
 
 /// Writes value as JSON to stdout and exits 0.

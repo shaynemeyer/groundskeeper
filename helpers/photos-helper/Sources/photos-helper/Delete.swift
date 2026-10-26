@@ -1,5 +1,6 @@
 @preconcurrency import ImageCaptureCore
 import Foundation
+import Photos
 
 /// The answer to `delete`.
 struct Deletion: Encodable {
@@ -28,7 +29,7 @@ func delete(_ requests: [DeleteRequest], in files: [ICCameraFile]) async -> Dele
             failed.append(Failure(id: request.id, reason: .notFound))
             continue
         }
-        guard matches(file, request) else {
+        guard matches(Asset(file), request) else {
             failed.append(Failure(id: request.id, reason: .mismatch))
             continue
         }
@@ -43,11 +44,42 @@ func delete(_ requests: [DeleteRequest], in files: [ICCameraFile]) async -> Dele
     return Deletion(source: "device", deleted: matched.map(\.assetID).filter(deleted.contains), failed: failed)
 }
 
+/// Deletes the requested assets from the Mac library in one change. macOS
+/// asks the user to confirm, and deleted photos go to Recently Deleted. An
+/// asset counts as deleted only if it can no longer be fetched afterwards.
+@MainActor
+func delete(_ requests: [DeleteRequest], inLibrary assets: [String: PHAsset]) async -> Deletion {
+    var matched: [String] = []
+    var failed: [Failure] = []
+    for request in requests {
+        guard let asset = assets[request.id] else {
+            failed.append(Failure(id: request.id, reason: .notFound))
+            continue
+        }
+        guard matches(Asset(asset, inAlbum: false), request) else {
+            failed.append(Failure(id: request.id, reason: .mismatch))
+            continue
+        }
+        matched.append(request.id)
+    }
+    // The change block is @Sendable because PhotoKit runs it on its own queue;
+    // inferred as @MainActor, it traps there in Swift 6.
+    if !matched.isEmpty {
+        let ids = matched
+        try? await PHPhotoLibrary.shared().performChanges { @Sendable in
+            PHAssetChangeRequest.deleteAssets(PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil))
+        }
+    }
+    let remaining = libraryAssets(withIDs: matched)
+    failed += matched.filter { remaining[$0] != nil }.map { Failure(id: $0, reason: .delete) }
+    return Deletion(source: "mac-library", deleted: matched.filter { remaining[$0] == nil }, failed: failed)
+}
+
 /// Size must be equal and the date within a second, because list writes
 /// dates without fractions of a second.
-private func matches(_ file: ICCameraFile, _ request: DeleteRequest) -> Bool {
-    guard let created = file.creationDate else { return false }
-    return file.fileSize == request.bytes && abs(created.timeIntervalSince(request.created)) < 1
+private func matches(_ asset: Asset, _ request: DeleteRequest) -> Bool {
+    guard let created = asset.created else { return false }
+    return asset.bytes == request.bytes && abs(created.timeIntervalSince(request.created)) < 1
 }
 
 /// Returns the IDs of the files the phone reports as deleted. The blocks are

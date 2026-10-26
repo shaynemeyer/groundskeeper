@@ -1,6 +1,9 @@
 @preconcurrency import ImageCaptureCore
 import CryptoKit
 import Foundation
+import ImageIO
+import Photos
+import UniformTypeIdentifiers
 
 /// The answer to `thumbnail`.
 struct Thumbnails: Encodable {
@@ -21,18 +24,20 @@ let reviewPixels = 1024
 
 /// Writes a thumbnail of each asset into dir, which is created 0700 if
 /// missing. Files are 0600 and named by a hash of the ID, because IDs come
-/// from the phone and must not be used as paths.
+/// from the source and must not be used as paths. find looks an ID up and
+/// jpeg fetches its thumbnail.
 @MainActor
-func writeThumbnails(_ ids: [String], in files: [ICCameraFile], to dir: URL) async -> Thumbnails {
-    let byID = Dictionary(files.map { ($0.assetID, $0) }, uniquingKeysWith: { first, _ in first })
+func writeThumbnails<Item>(
+    _ ids: [String], source: String, to dir: URL, find: (String) -> Item?, jpeg: (Item) async -> Data?
+) async -> Thumbnails {
     var thumbnails: [Thumbnail] = []
     var failed: [Failure] = []
     for id in ids {
-        guard let file = byID[id] else {
+        guard let item = find(id) else {
             failed.append(Failure(id: id, reason: .notFound))
             continue
         }
-        guard let data = await thumbnailData(of: file, pixels: reviewPixels) else {
+        guard let data = await jpeg(item) else {
             failed.append(Failure(id: id, reason: .thumbnail))
             continue
         }
@@ -43,7 +48,36 @@ func writeThumbnails(_ ids: [String], in files: [ICCameraFile], to dir: URL) asy
         }
         thumbnails.append(Thumbnail(id: id, path: path))
     }
-    return Thumbnails(source: "device", thumbnails: thumbnails, failed: failed)
+    return Thumbnails(source: source, thumbnails: thumbnails, failed: failed)
+}
+
+/// Writes the phone's own JPEG thumbnails, without re-encoding.
+@MainActor
+func writeThumbnails(_ ids: [String], in files: [ICCameraFile], to dir: URL) async -> Thumbnails {
+    let byID = Dictionary(files.map { ($0.assetID, $0) }, uniquingKeysWith: { first, _ in first })
+    return await writeThumbnails(ids, source: "device", to: dir, find: { byID[$0] }) {
+        await thumbnailData(of: $0, pixels: reviewPixels)
+    }
+}
+
+/// Writes thumbnails of Mac library assets, encoded from pixels alone, so no
+/// metadata such as GPS is copied.
+@MainActor
+func writeThumbnails(_ ids: [String], inLibrary assets: [String: PHAsset], to dir: URL) async -> Thumbnails {
+    await writeThumbnails(ids, source: "mac-library", to: dir, find: { assets[$0] }) { asset in
+        guard let image = await image(of: asset, pixels: reviewPixels) else { return nil }
+        return jpeg(image)
+    }
+}
+
+/// Encodes image as a JPEG with no metadata.
+func jpeg(_ image: CGImage) -> Data? {
+    let data = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else {
+        return nil
+    }
+    CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+    return CGImageDestinationFinalize(destination) ? data as Data : nil
 }
 
 /// The first 16 bytes of the ID's SHA-256, in hex, plus ".jpg".

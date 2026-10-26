@@ -1,6 +1,7 @@
 @preconcurrency import ImageCaptureCore
 import Foundation
 import ImageIO
+import Photos
 import Vision
 
 /// The answer to `analyze`.
@@ -26,18 +27,20 @@ struct Analysis: Encodable {
 /// long to fetch and gave almost the same scores.
 let analysisPixels = 512
 
-/// Analyzes the given assets one at a time, in the order given.
+/// Analyzes the given assets one at a time, in the order given. find looks
+/// an ID up in the source and image fetches its thumbnail.
 @MainActor
-func analyze(_ ids: [String], in files: [ICCameraFile]) async -> Analyses {
-    let byID = Dictionary(files.map { ($0.assetID, $0) }, uniquingKeysWith: { first, _ in first })
+func analyze<Item>(
+    _ ids: [String], source: String, find: (String) -> Item?, image: (Item) async -> CGImage?
+) async -> Analyses {
     var analyses: [Analysis] = []
     var failed: [Failure] = []
     for id in ids {
-        guard let file = byID[id] else {
+        guard let item = find(id) else {
             failed.append(Failure(id: id, reason: .notFound))
             continue
         }
-        guard let image = await thumbnail(of: file) else {
+        guard let image = await image(item) else {
             failed.append(Failure(id: id, reason: .thumbnail))
             continue
         }
@@ -47,7 +50,20 @@ func analyze(_ ids: [String], in files: [ICCameraFile]) async -> Analyses {
         }
         analyses.append(analysis)
     }
-    return Analyses(source: "device", analyses: analyses, failed: failed)
+    return Analyses(source: source, analyses: analyses, failed: failed)
+}
+
+/// Analyzes assets on the phone.
+@MainActor
+func analyze(_ ids: [String], in files: [ICCameraFile]) async -> Analyses {
+    let byID = Dictionary(files.map { ($0.assetID, $0) }, uniquingKeysWith: { first, _ in first })
+    return await analyze(ids, source: "device", find: { byID[$0] }, image: { await thumbnail(of: $0) })
+}
+
+/// Analyzes assets in the Mac Photos library.
+@MainActor
+func analyze(_ ids: [String], inLibrary assets: [String: PHAsset]) async -> Analyses {
+    await analyze(ids, source: "mac-library", find: { assets[$0] }, image: { await image(of: $0, pixels: analysisPixels) })
 }
 
 private func analyze(_ image: CGImage, id: String) async throws -> Analysis {

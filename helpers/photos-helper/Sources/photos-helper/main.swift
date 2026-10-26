@@ -1,16 +1,17 @@
 // photos-helper reads photos for Groundskeeper and answers with JSON on stdout.
-// Usage:
-//   photos-helper list --source device
-//   photos-helper analyze --source device < ids.json
-//   photos-helper thumbnail --source device --out <dir> < ids.json
-//   photos-helper delete --source device < requests.json
+// Usage, where <source> is device (the iPhone on USB) or mac-library:
+//   photos-helper list --source <source>
+//   photos-helper analyze --source <source> < ids.json
+//   photos-helper thumbnail --source <source> --out <dir> < ids.json
+//   photos-helper delete --source <source> < requests.json
 import Foundation
 
 let usage = """
-    usage: photos-helper list --source device
-           photos-helper analyze --source device < ids.json
-           photos-helper thumbnail --source device --out <dir> < ids.json
-           photos-helper delete --source device < requests.json
+    usage: photos-helper list --source <source>
+           photos-helper analyze --source <source> < ids.json
+           photos-helper thumbnail --source <source> --out <dir> < ids.json
+           photos-helper delete --source <source> < requests.json
+    <source> is device (the iPhone on USB) or mac-library.
 
     """
 
@@ -54,13 +55,28 @@ func outputDir(_ path: String) -> URL {
 
 let args = CommandLine.arguments.dropFirst()
 guard let command = args.first.flatMap(Command.init), let flags = parseFlags(args.dropFirst()),
-    flags["source"] == "device"
+    let source = flags["source"], ["device", "mac-library"].contains(source)
 else { usageError() }
 let allowed: Set<String> = command == .thumbnail ? ["source", "out"] : ["source"]
 guard Set(flags.keys) == allowed else { usageError() }
 let ids = command == .analyze || command == .thumbnail ? readInput([String].self) : []
 let requests = command == .delete ? readInput([DeleteRequest].self) : []
 let out = flags["out"].map(outputDir)
+
+if source == "mac-library" {
+    Task {
+        guard await requestLibraryAccess() else { fail(.denied) }
+        switch command {
+        case .list:
+            let inAlbums = assetsInAlbums()
+            emit(Listing(source: source, assets: libraryAssets().map { Asset($0, inAlbum: inAlbums.contains($0.localIdentifier)) }))
+        case .analyze: emit(await analyze(ids, inLibrary: libraryAssets(withIDs: ids)))
+        case .thumbnail: emit(await writeThumbnails(ids, inLibrary: libraryAssets(withIDs: ids), to: out!))
+        case .delete: emit(await delete(requests, inLibrary: libraryAssets(withIDs: requests.map(\.id))))
+        }
+    }
+    RunLoop.main.run()
+}
 
 let catalog = DeviceCatalog { result in
     guard case .success(let files) = result else {
