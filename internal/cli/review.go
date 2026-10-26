@@ -135,7 +135,7 @@ func photoViewer(ctx context.Context, home, source, dir string, inline bool) tui
 		Thumbnails: func(ids []string) (map[string]string, error) {
 			thumbs, _, err := h.Thumbnails(ctx, ids, dir)
 			if err != nil {
-				return nil, errors.New(thumbnailProblem(err))
+				return nil, errors.New(helperProblem(err))
 			}
 			paths := map[string]string{}
 			for _, t := range thumbs {
@@ -150,8 +150,8 @@ func photoViewer(ctx context.Context, home, source, dir string, inline bool) tui
 	}
 }
 
-// thumbnailProblem says briefly why thumbnails couldn't be fetched.
-func thumbnailProblem(err error) string {
+// helperProblem says briefly why photos-helper couldn't do its job.
+func helperProblem(err error) string {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return "photos-helper isn't installed. Run make install."

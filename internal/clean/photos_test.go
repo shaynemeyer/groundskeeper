@@ -90,3 +90,28 @@ func TestSelectionSurvivesPruning(t *testing.T) {
 		t.Errorf("pruning removed the selection: %v", err)
 	}
 }
+
+func TestSelectionRequests(t *testing.T) {
+	s, err := NewSelection(reviewed, iphone.SourceDevice, scanned, []string{"F/IMG_0001.HEIC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := iphone.DeleteRequest{ID: "F/IMG_0001.HEIC", Bytes: 100, Created: reviewed.Add(-time.Hour)}
+	if r := s.Requests(); len(r) != 1 || r[0] != want {
+		t.Errorf("got %+v, want %+v", r, want)
+	}
+}
+
+func TestSelectionWithout(t *testing.T) {
+	s, err := NewSelection(reviewed, iphone.SourceDevice, scanned, []string{"F/IMG_0001.HEIC", "F/IMG_0002.HEIC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := s.Without([]string{"F/IMG_0001.HEIC"})
+	if len(left.Delete) != 1 || left.Delete[0].ID != "F/IMG_0002.HEIC" || left.Source != s.Source {
+		t.Errorf("got %+v", left)
+	}
+	if len(s.Delete) != 2 {
+		t.Errorf("Without changed the original: %+v", s.Delete)
+	}
+}

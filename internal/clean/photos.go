@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/shaynemeyer/groundskeeper/internal/history"
@@ -88,4 +89,19 @@ func LoadSelection(path string) (Selection, error) {
 	}
 	err = json.Unmarshal(data, &s)
 	return s, err
+}
+
+// Requests is what photos-helper delete needs for each approved photo.
+func (s Selection) Requests() []iphone.DeleteRequest {
+	var r []iphone.DeleteRequest
+	for _, a := range s.Delete {
+		r = append(r, iphone.DeleteRequest{ID: a.ID, Bytes: a.Bytes, Created: a.Created})
+	}
+	return r
+}
+
+// Without returns s minus the photos in ids, such as those just deleted.
+func (s Selection) Without(ids []string) Selection {
+	s.Delete = slices.DeleteFunc(slices.Clone(s.Delete), func(a Approved) bool { return slices.Contains(ids, a.ID) })
+	return s
 }

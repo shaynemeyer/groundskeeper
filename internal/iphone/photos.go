@@ -141,6 +141,30 @@ func (h Helper) Thumbnails(ctx context.Context, ids []string, dir string) ([]Thu
 }
 
 // call runs one command with flags after --source, and decodes its answer
+// DeleteRequest names a photo to delete with the size and date the scan
+// saw; photos-helper refuses the photo as a mismatch if either changed.
+type DeleteRequest struct {
+	ID      string    `json:"id"`
+	Bytes   int64     `json:"bytes"`
+	Created time.Time `json:"created"`
+}
+
+// Delete runs photos-helper delete and returns the IDs deleted and the
+// ones it refused or couldn't delete. Device deletes are permanent; Mac
+// library deletes ask the user and go to Recently Deleted.
+func (h Helper) Delete(ctx context.Context, requests []DeleteRequest) ([]string, []Failure, error) {
+	in, err := json.Marshal(requests)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out struct {
+		Deleted []string
+		Failed  []Failure
+	}
+	err = h.call(ctx, in, &out, "delete")
+	return out.Deleted, out.Failed, err
+}
+
 // into out.
 func (h Helper) call(ctx context.Context, stdin []byte, out any, command string, flags ...string) error {
 	args := append([]string{command, "--source", h.Source}, flags...)

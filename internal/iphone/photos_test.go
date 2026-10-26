@@ -161,3 +161,26 @@ func TestDistance(t *testing.T) {
 		t.Errorf("got %v, want +Inf for different lengths", d)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	f := &fakeHelper{file: "delete-device.json"}
+	created := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	requests := []DeleteRequest{
+		{ID: "202610__/IMG_0001.HEIC", Bytes: 100, Created: created},
+		{ID: "202610__/IMG_0002.HEIC", Bytes: 200, Created: created},
+	}
+	deleted, failed, err := f.helper(SourceDevice).Delete(context.Background(), requests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"id":"202610__/IMG_0001.HEIC","bytes":100,"created":"2026-10-01T09:00:00Z"},{"id":"202610__/IMG_0002.HEIC","bytes":200,"created":"2026-10-01T09:00:00Z"}]`
+	if f.args[1] != "delete" || string(f.stdin) != want {
+		t.Errorf("args %q, stdin %s", f.args, f.stdin)
+	}
+	if !slices.Equal(deleted, []string{"202610__/IMG_0001.HEIC"}) {
+		t.Errorf("deleted %q", deleted)
+	}
+	if len(failed) != 1 || failed[0] != (Failure{ID: "202610__/IMG_0002.HEIC", Reason: "mismatch"}) {
+		t.Errorf("failed %+v", failed)
+	}
+}
