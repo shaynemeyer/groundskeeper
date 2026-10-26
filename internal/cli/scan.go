@@ -94,15 +94,18 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	rep := report.Report{Generated: start, Disk: disk}
 	measurer := size.New(folderTimeout, sizeWorkers)
 	minBytes := cfg.MinSizeMB * 1_000_000
+	roots := expandAll(cfg.ProjectRoots, home)
 	scanners := []scan.Scanner{
 		scan.Caches{Size: measurer, MinBytes: minBytes},
+		scan.Models{Size: measurer, ProjectRoots: roots, MinBytes: minBytes},
 		scan.Artifacts{
 			Size:      measurer,
-			Roots:     expandAll(cfg.ProjectRoots, home),
+			Roots:     roots,
 			Exclude:   expandAll(cfg.ExcludePaths, home),
 			StaleDays: cfg.StaleDays,
 			MinBytes:  minBytes,
 		},
+		scan.Toolchains{Size: measurer, MinBytes: minBytes},
 	}
 	for _, s := range scanners {
 		begin := time.Now()

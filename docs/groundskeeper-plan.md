@@ -147,6 +147,19 @@ Walk the configured project roots (default: `~/projects`, `~/github`, `~/code`, 
 
 **Broken venvs.** Flag any `.venv` whose `pyvenv.cfg` `home` points at an interpreter that no longer exists. This is useful after removing pyenv, since many venvs were built on pyenv Pythons.
 
+### AI model and toolchain detection
+
+- **Default locations only.** A scheduled launchd run doesn't see shell variables such as `OLLAMA_MODELS` or `HF_HOME`, so the scanners use each tool's default folder. `extraPaths` is the planned way to add custom locations, but it isn't wired up yet.
+- **Ollama:** the size and name of each model come from its manifest in `~/.ollama/models/manifests`, so the output matches `ollama list`. The pull date is the manifest's modification time. Blobs no manifest references are totalled as one row. That check is skipped if `manifests-v2` holds any files, because those manifests aren't parsed yet and every blob would look unused.
+- **Hugging Face:** each `models--`, `datasets--` or `spaces--` folder becomes `model/org/name` (and so on) for `hf cache rm`. Newer `huggingface_hub` versions keep Xet files in a shared `<hub>/blobs` store and symlink each repo's blobs to it. Those symlinked files count toward each repo, which matches the per-repo sizes `hf cache ls` shows ([docs](https://huggingface.co/docs/huggingface_hub/guides/manage-cache)).
+- **LM Studio:** `models/<publisher>/<model>` in `~/.lmstudio` and the older `~/.cache/lm-studio`.
+- **ComfyUI:** each folder in `models/` for installs in `~/ComfyUI`, `~/Documents/ComfyUI`, and the top two levels of each project root.
+- **Toolchains:**
+  - rustup: `rustup toolchain uninstall <name>`
+  - pyenv: `pyenv uninstall <version>`, without `-f` so pyenv still asks first
+  - uv: `uv python uninstall <key>`, using the full key such as `cpython-3.12.12-macos-aarch64-none`. uv's minor-version symlinks are skipped.
+  - Volta: has no command to remove a Node version, so the hint is `rm -rf` of the version folder. Volta has been unmaintained since November 2025.
+
 ## iPhone mode
 
 ```

@@ -137,6 +137,23 @@ func TestScanFindsBuildArtifacts(t *testing.T) {
 	}
 }
 
+func TestScanSectionsInReportOrder(t *testing.T) {
+	home := fakeHome(t)
+	run(t, "scan")
+	data, err := os.ReadFile(filepath.Join(home, "Reports/groundskeeper/latest.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, last := string(data), -1
+	for _, section := range []string{"Caches", "AI models", "Build artifacts", "Toolchains"} {
+		i := strings.Index(html, "<span>"+section+"</span>")
+		if i < last {
+			t.Errorf("section %q missing or out of order", section)
+		}
+		last = i
+	}
+}
+
 func TestNoContentsOrSecretsInOutput(t *testing.T) {
 	home := fakeHome(t)
 	t.Setenv("GITHUB_TOKEN", marker)

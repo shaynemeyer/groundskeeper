@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"io/fs"
@@ -55,22 +54,8 @@ func (c Caches) Scan(ctx context.Context, home string) (Findings, error) {
 		return Findings{}, err
 	}
 	items = append(items, others...)
-
-	paths := make([]string, len(items))
-	for i, it := range items {
-		paths[i] = it.Path
-	}
-	var f Findings
-	for i, res := range c.Size.MeasureAll(ctx, paths) {
-		f.Skipped = append(f.Skipped, res.Skipped...)
-		if res.Bytes == 0 || res.Bytes < c.MinBytes {
-			continue
-		}
-		items[i].Bytes = res.Bytes
-		f.Items = append(f.Items, items[i])
-	}
-	slices.SortFunc(f.Items, func(a, b Item) int { return cmp.Compare(b.Bytes, a.Bytes) })
-	return f, nil
+	skipped := measure(ctx, c.Size, items)
+	return Findings{Items: keep(items, c.MinBytes), Skipped: skipped}, nil
 }
 
 func otherLibraryCaches(home string) ([]Item, error) {

@@ -108,6 +108,14 @@ func (m *Measurer) skip(res *Result, path string, d fs.DirEntry, err error) erro
 	return nil
 }
 
+// Allocated returns the disk blocks a file uses, in bytes.
+func Allocated(info fs.FileInfo) int64 {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		return st.Blocks * 512
+	}
+	return info.Size()
+}
+
 func (m *Measurer) allocated(info fs.FileInfo) int64 {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
@@ -123,5 +131,5 @@ func (m *Measurer) allocated(info fs.FileInfo) int64 {
 			return 0
 		}
 	}
-	return st.Blocks * 512
+	return Allocated(info)
 }

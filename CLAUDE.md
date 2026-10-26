@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Build steps 1 and 2 of `docs/groundskeeper-plan.md` are done: CLI skeleton, logging, size engine, Caches and Build artifacts scanners, and the HTML report. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
+Build steps 1 to 3 of `docs/groundskeeper-plan.md` are done: CLI skeleton, logging, size engine, the Caches, AI models, Build artifacts and Toolchains scanners, and the HTML report. The plan is the source of truth. Read it before starting work, follow its **Build order** step by step, and update the plan if a decision changes.
 
 Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that scans the Mac (and an iPhone connected over USB) for disk space that can be reclaimed and writes an HTML report. launchd runs it on a schedule twice a week.
 
