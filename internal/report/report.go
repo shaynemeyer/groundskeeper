@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/iphone"
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
@@ -51,7 +52,22 @@ type Report struct {
 	Skipped   []size.Skip
 	Deltas    history.Deltas
 	Run       metrics.Run
-	Freed     int64 // moved to the Trash by clean commands since the last report
+	Freed     int64  // moved to the Trash by clean commands since the last report
+	IPhone    *Phone // nil until an iPhone has been read
+}
+
+// phoneApps is how many of the iPhone's largest apps the report lists.
+const phoneApps = 20
+
+// Phone is the iPhone section: what the latest read of the phone found.
+type Phone struct {
+	Time  time.Time
+	Phone iphone.Phone
+}
+
+// TopApps is the phone's largest apps.
+func (p Phone) TopApps() []iphone.App {
+	return p.Phone.Apps[:min(phoneApps, len(p.Phone.Apps))]
 }
 
 // Change is how much an item changed since the last run, or "" when there

@@ -43,6 +43,7 @@ type scanOptions struct {
 	open   bool
 	dry    bool
 	notify bool
+	iphone bool // read the connected iPhone first, and fail if it can't be read
 }
 
 func addScanFlags(cmd *cobra.Command, opts *scanOptions) {
@@ -116,6 +117,13 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 
 	start := time.Now()
 	log.Info("run started", logging.Flag("dry_run", opts.dry))
+	var phone *report.Phone
+	var phoneStat metrics.Scanner
+	if opts.iphone {
+		if phone, phoneStat, err = readPhone(log, start); err != nil {
+			return err
+		}
+	}
 	disk, err := scan.DiskUsage(home)
 	if err != nil {
 		return err
@@ -123,6 +131,10 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	measurer := size.New(folderTimeout, sizeWorkers)
 	rep := report.Report{Generated: start, Disk: disk}
 	rep.Sections, rep.Skipped, rep.Run.Scanners = runScanners(ctx, log, newScanners(home, cfg, measurer), home)
+	if phone != nil {
+		rep.IPhone = phone
+		rep.Run.Scanners = append([]metrics.Scanner{phoneStat}, rep.Run.Scanners...)
+	}
 	rep.Run.Start = start
 	rep.Run.DurationMS = time.Since(start).Milliseconds()
 	rep.Run.Command = commandName(cmd)
@@ -130,6 +142,11 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	rep.Run.Size = measurer.Stats()
 	if err := addHistory(log, home, &rep, opts.dry); err != nil {
 		return err
+	}
+	if phone != nil && !opts.dry {
+		if err := savePhone(log, home, *phone); err != nil {
+			return err
+		}
 	}
 
 	path := ""
@@ -332,6 +349,9 @@ func printSummary(w io.Writer, rep report.Report, path string) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Free space   %s of %s\n", ui.Bytes(rep.Disk.Free), ui.Bytes(rep.Disk.Total))
 	fmt.Fprintf(&b, "Reclaimable  %s (safe items)\n", ui.Bytes(rep.Reclaimable()))
+	if p := rep.IPhone; p != nil {
+		fmt.Fprintf(&b, "iPhone       %s free of %s\n", ui.Bytes(p.Phone.FreeBytes), ui.Bytes(p.Phone.TotalBytes))
+	}
 	if rep.Deltas.HasPrevious() {
 		fmt.Fprintf(&b, "Since %s  %s free space\n", rep.Deltas.Previous.Format(dateFormat), ui.Delta(rep.Deltas.FreeDelta))
 	}

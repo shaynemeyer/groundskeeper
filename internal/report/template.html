@@ -22,6 +22,7 @@ body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
 main { max-width: 960px; margin: 0 auto; }
 h1 { font: 700 26px ui-monospace, Menlo, monospace; margin: 0 0 4px; }
+h3 { font-size: 15px; margin: 20px 0 8px; }
 h2 { font-size: 18px; margin: 32px 0 8px; display: flex; justify-content: space-between; gap: 8px; }
 .muted { color: var(--muted); }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 20px; }
@@ -83,6 +84,28 @@ tr.slow td { background: var(--warn-bg); }
 </table></div>
 {{else}}
 <p class="muted">Nothing over the size threshold.</p>
+{{end}}
+{{end}}
+
+{{with .IPhone}}
+<h2><span>iPhone</span><span class="muted">iOS {{.Phone.IOS}}, read {{.Time.Format "Mon 2 Jan 15:04"}}</span></h2>
+<p>{{bytes .Phone.FreeBytes}} free of {{bytes .Phone.TotalBytes}}.</p>
+<div class="table"><table>
+<thead><tr><th>App</th><th>App size</th><th>Data</th><th>Total</th></tr></thead>
+<tbody>
+{{range .TopApps}}<tr><td>{{.Name}}<span class="path">{{.BundleID}}</span></td><td class="num">{{bytes .AppBytes}}</td><td class="num">{{bytes .DataBytes}}</td><td class="num">{{bytes .Bytes}}</td></tr>{{end}}
+</tbody>
+</table></div>
+<p class="muted">The largest {{len .TopApps}} of {{len .Phone.Apps}} apps. Data is the size iOS reports over USB, which can differ from Settings › General › iPhone Storage. Offline downloads and caches are counted in it. To free an app's space but keep its data, offload it in iPhone Storage.</p>
+{{if .Phone.Shared}}
+<h3>Shared app files</h3>
+<div class="table"><table>
+<thead><tr><th>App</th><th>Size</th><th>Largest files</th></tr></thead>
+<tbody>
+{{range .Phone.Shared}}<tr><td>{{.Name}}<span class="path">{{.BundleID}}</span><span class="muted">{{.Count}} files</span></td><td class="num">{{bytes .Bytes}}</td><td>{{range .Files}}<span class="path">{{.Name}} ({{bytes .Bytes}})</span>{{end}}</td></tr>{{end}}
+</tbody>
+</table></div>
+<p class="muted">Files these apps share with the Mac, as Finder shows them for the phone. Delete them in Finder or in the app. Other apps' private storage, such as streaming downloads and Messages attachments, can't be read over USB; check iPhone Storage for those.</p>
 {{end}}
 {{end}}
 

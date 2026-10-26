@@ -11,20 +11,20 @@ const topFiles = 5
 
 // Phone is what one read of an iPhone found.
 type Phone struct {
-	Model      string
-	IOS        string
-	TotalBytes int64
-	FreeBytes  int64
-	Apps       []App       // largest first
-	Shared     []Container // file-sharing apps holding files, largest first
+	Model      string      `json:"model"`
+	IOS        string      `json:"ios"`
+	TotalBytes int64       `json:"total"`
+	FreeBytes  int64       `json:"free"`
+	Apps       []App       `json:"apps"`   // largest first
+	Shared     []Container `json:"shared"` // file-sharing apps holding files, largest first
 }
 
 // App is an installed app and the sizes iOS reports for it over USB.
 type App struct {
-	BundleID  string
-	Name      string
-	AppBytes  int64 // the app itself (StaticDiskUsage)
-	DataBytes int64 // documents and data (DynamicDiskUsage)
+	BundleID  string `json:"bundleID"`
+	Name      string `json:"name"`
+	AppBytes  int64  `json:"appBytes"`  // the app itself (StaticDiskUsage)
+	DataBytes int64  `json:"dataBytes"` // documents and data (DynamicDiskUsage)
 }
 
 // Bytes is the app's total size.
@@ -35,17 +35,17 @@ func (a App) Apple() bool { return strings.HasPrefix(a.BundleID, "com.apple.") }
 
 // Container is a file-sharing app's Documents folder.
 type Container struct {
-	BundleID string
-	Name     string
-	Bytes    int64
-	Count    int
-	Files    []File // up to topFiles, largest first
+	BundleID string `json:"bundleID"`
+	Name     string `json:"name"`
+	Bytes    int64  `json:"bytes"`
+	Count    int    `json:"count"`
+	Files    []File `json:"files"` // up to topFiles, largest first
 }
 
 // File is a file in a shared container, named relative to Documents.
 type File struct {
-	Name  string
-	Bytes int64
+	Name  string `json:"name"`
+	Bytes int64  `json:"bytes"`
 }
 
 // Parse turns go-ios responses into a Phone.

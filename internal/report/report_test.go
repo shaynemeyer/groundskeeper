@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/iphone"
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
@@ -169,5 +170,44 @@ func TestRenderRunDetails(t *testing.T) {
 	}
 	if strings.Contains(html, `<tr class="slow"><td>Caches`) {
 		t.Error("fast scanner highlighted")
+	}
+}
+
+func phoneSample() *Phone {
+	return &Phone{
+		Time: time.Date(2026, 10, 25, 20, 0, 0, 0, time.Local),
+		Phone: iphone.Phone{
+			IOS:        "27.0.1",
+			TotalBytes: 256_000_000_000,
+			FreeBytes:  73_000_000_000,
+			Apps: []iphone.App{
+				{BundleID: "com.example.app1", Name: "Big App", AppBytes: 488_000_000, DataBytes: 8_770_000_000},
+				{BundleID: "com.apple.Pages", Name: "Pages", AppBytes: 400_000_000},
+			},
+			Shared: []iphone.Container{{
+				BundleID: "com.example.app2", Name: "Reader", Bytes: 656_900_000, Count: 65,
+				Files: []iphone.File{{Name: "<script>alert(1)</script>.mobi", Bytes: 74_900_000}},
+			}},
+		},
+	}
+}
+
+func TestRenderShowsIPhone(t *testing.T) {
+	r := sample()
+	r.IPhone = phoneSample()
+	html := render(t, r)
+	for _, want := range []string{"iPhone", "iOS 27.0.1", "73.0 GB", "Big App", "com.example.app1", "8.8 GB", "Reader", "65 files", "iPhone Storage"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+	if strings.Contains(html, "<script>alert(1)</script>") {
+		t.Error("shared file name not escaped")
+	}
+}
+
+func TestRenderWithoutIPhoneHasNoSection(t *testing.T) {
+	if html := render(t, sample()); strings.Contains(html, "iOS ") {
+		t.Error("iPhone section shown without iPhone data")
 	}
 }
