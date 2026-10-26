@@ -44,16 +44,19 @@ func TestListDevice(t *testing.T) {
 	if !slices.Equal(f.args, want) {
 		t.Errorf("args %q, want %q", f.args, want)
 	}
-	if len(assets) != 2 {
-		t.Fatalf("got %d assets, want 2", len(assets))
+	if len(assets) != 3 {
+		t.Fatalf("got %d assets, want 3", len(assets))
 	}
 	a := assets[1]
 	if a.ID != "202610__/IMG_0002.HEIC" || a.Burst != "B1" || a.Bytes != 2_050_000 || a.Width != 4032 ||
 		!a.Created.Equal(time.Date(2026, 10, 1, 9, 0, 2, 0, time.UTC)) {
 		t.Errorf("got %+v", a)
 	}
-	if assets[0].SidecarBytes != 1_500_000 || assets[0].Favorite {
+	if assets[0].SidecarBytes != 1_500_000 || assets[0].Favorite || assets[0].Video {
 		t.Errorf("got %+v", assets[0])
+	}
+	if !assets[2].Video || assets[2].Screenshot {
+		t.Errorf("got %+v", assets[2])
 	}
 }
 
@@ -66,7 +69,7 @@ func TestListLibrary(t *testing.T) {
 	if f.args[3] != "mac-library" {
 		t.Errorf("source %q", f.args[3])
 	}
-	if a := assets[0]; !a.Edited || !a.InAlbum || a.Favorite {
+	if a := assets[0]; !a.Edited || !a.InAlbum || a.Favorite || !a.Screenshot || a.Video {
 		t.Errorf("got %+v", a)
 	}
 }

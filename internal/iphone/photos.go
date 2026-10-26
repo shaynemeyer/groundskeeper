@@ -26,8 +26,9 @@ var (
 	ErrHelper  = errors.New("photos-helper failed")
 )
 
-// Asset is one photo or video from photos-helper list. Favorite, Edited and
-// InAlbum are only known for the Mac library.
+// Asset is one photo or video from photos-helper list. Favorite and InAlbum
+// are only known for the Mac library; on the phone, Edited means iOS sent an
+// edited render with the photo.
 type Asset struct {
 	ID           string    `json:"id"`
 	Created      time.Time `json:"created"`
@@ -36,6 +37,8 @@ type Asset struct {
 	Bytes        int64     `json:"bytes"`
 	SidecarBytes int64     `json:"sidecarBytes"`
 	Burst        string    `json:"burst"`
+	Video        bool      `json:"video"`
+	Screenshot   bool      `json:"screenshot"`
 	Favorite     bool      `json:"favorite"`
 	Edited       bool      `json:"edited"`
 	InAlbum      bool      `json:"inAlbum"`
