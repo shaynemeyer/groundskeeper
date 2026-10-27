@@ -6,7 +6,7 @@ It runs twice a week on macOS and generates an HTML report of disk space that ca
 
 ## Goals
 
-- **The scan is read-only.** The scheduled report never deletes anything; it only suggests cleanup commands. Cleanup happens only through explicit `clean` subcommands that you run yourself: browser caches (see [Browser cleanup](#browser-cleanup-opt-in)), iPhone apps and duplicate photos (see [iPhone mode](#iphone-mode)).
+- **The scan is read-only.** The scheduled report never deletes anything; it only suggests cleanup commands. Cleanup happens only through explicit `clean` subcommands that you run yourself: browser caches (see [Browser cleanup](#browser-cleanup-opt-in)), Mac items you tick in a review (see [Mac cleanup](#mac-cleanup-opt-in)), iPhone apps and duplicate photos (see [iPhone mode](#iphone-mode)).
 - **One Go binary, few dependencies.** The scanners use the standard library, with the HTML template embedded via `go:embed`. iPhone mode adds `go-ios` (pure Go, talks to the phone over USB) and a small Swift helper for the photo work that only Apple frameworks can do. The CLI uses Cobra with Charm's Fang, Lip Gloss and Bubble Tea (see [Command-line interface](#command-line-interface)).
 - **A CLI that explains itself.** Grouped commands, rich help with examples and safety notes on every command, styled output, and shell completion.
 - **Runs unattended** twice a week via launchd, and posts a macOS notification when the report is ready.
@@ -354,6 +354,38 @@ Safety rules:
 
 The HTML report shows the exact command next to each browser's savings, for example `groundskeeper clean browsers --browser chrome --apply`.
 
+## Mac cleanup (opt-in)
+
+```
+groundskeeper review mac
+groundskeeper clean mac [--apply]
+```
+
+Today everything on the Mac except browser caches is cleaned by hand: the report shows a hint and the user pastes it. `review mac` and `clean mac` let the user tick items from the last scan and move them to the Trash in one go, following the same review-then-clean pattern as `review photos` and `clean photos`. Hints stay display-only; `clean mac` never runs them.
+
+**What can be cleaned.** A scanner sets a new `Item.Trash` field to the path whose removal is the cleanup, and only when moving that one path to the Trash is the whole cleanup and frees what the row reports. `Item.Path` isn't reused, because for some rows it isn't the thing to remove: the `__pycache__` total's `Path` is the project folder, the unused Ollama blobs row's `Path` is the `blobs` folder every model shares, an Ollama model's `Path` is its manifest, and an unused app's size includes leftovers outside its `Path`. Rows without `Trash` are listed in the report as now, with their hint, and can't be selected.
+
+| Section | `Trash` set for | Not set for, and why |
+|---|---|---|
+| Caches | Each known cache folder and each child of `~/Library/Caches`; the tools recreate them | Browser folders, which `clean browsers` owns |
+| Build artifacts | Each artifact folder (`node_modules`, `target`, `.next`, a venv, ...) | `__pycache__` totals, which span many folders in one project |
+| Downloads | Each top-level file or folder | — |
+| AI models | Hugging Face `models--*` and `datasets--*` repos; LM Studio model folders | Ollama models and unused blobs (need `ollama rm`); ComfyUI kind folders, which hold many models |
+| Toolchains, Containers, Unused apps, Browsers | — | Toolchains and Containers need their tool to stay consistent; apps may be Homebrew casks and have leftovers; browsers have `clean browsers` |
+
+**Review.** `review mac` lists the selectable rows of the last snapshot, grouped by section, largest first, with size, safety tag and note. Nothing is ticked at the start, so the user chooses every item; space ticks, enter saves, q or ctrl+c leaves without saving. It saves `{time, items: [{section, label, trash, bytes}]}` to `~/.local/state/groundskeeper/mac-review.json` (`0600`), replacing any earlier review. A snapshot older than 7 days is refused with a pointer to `gk scan`, since folders may have been reused since. Without a terminal it says to run it in one and exits 1.
+
+**Clean.** `clean mac` loads the saved review and prints the count and total. Without `--apply` it stops there. With `--apply` it asks `Move them to the Trash? [y/N]`, then checks each item and moves it with `/usr/bin/trash -s`, as `clean browsers` does. Moved items leave the saved review; refused and failed ones stay, each listed with the reason. The run is recorded as a `metrics.Clean` (`clean mac`), so the next report counts it in "moved to the Trash", and every action is logged.
+
+Safety rules, on top of the ones every clean command follows:
+- **The allowlist is derived again, not read from the review file.** At clean time each `trash` path must match a section rule: a known cache folder or a direct child of `~/Library/Caches` (not a browser's); an artifact folder name inside a configured project root; a direct child of `~/Downloads`; a direct child of the Hugging Face hub named `models--*` or `datasets--*`; a model folder under `~/.lmstudio/models`. A path that fits no rule is refused, so a hand-edited review can't point at `~/Documents`.
+- **The real path must equal the saved one.** `filepath.EvalSymlinks` resolves it first; a symlink anywhere along the path, `..`, or a path outside the home folder is refused. The item itself must not be a symlink.
+- **It must still exist and still be the same kind** (folder or file) as at scan time.
+- **Trash, never delete.** Space comes back when the Trash is emptied; the summary says so.
+- **Never scheduled.** As with every clean command.
+
+Not in this version: running-process checks (a build tool may be using a cache or `node_modules`; the tools recreate them, and the Trash allows undoing), and cleaning through a tool's own command (Ollama, Podman, rustup, Homebrew).
+
 ## Command-line interface
 
 The CLI should be pleasant to use and explain itself. Every command has a one-line summary, a longer description, worked examples, and a note about what it will and won't touch.
@@ -385,11 +417,13 @@ Report (read-only)
 
 Review
   review photos   Step through duplicate photo groups
+  review mac      Tick Mac items to move to the Trash
 
 Clean (dry run unless --apply)
   clean browsers      Move browser caches to the Trash
   clean iphone-apps   Uninstall iPhone apps by bundle ID
   clean photos        Delete photos you approved in review
+  clean mac           Move the Mac items you ticked to the Trash
 
 Setup
   setup photos   Re-ask whether iCloud Photos is on
@@ -689,10 +723,12 @@ groundskeeper/
     - **Fixture guard:** a test walks every `testdata/` directory and fails if any file contains a UDID, MAC address or email address, or a bundle ID outside `com.apple.*` and `com.example.*`. This catches unscrubbed recordings even if the recorder is bypassed. Those values have a distinctive shape, so they're matched anywhere in the file. Phone numbers and IMEIs are plain digit strings that look like file sizes (`1234567890` bytes is about 1.2 GB), so they're only checked in fields whose key names them, such as `PhoneNumber`, `IMEI` or `MEID`. Their values must be the fixed fakes. A test case confirms that a large size value doesn't trip the guard.
     - **Safe log fields:** the logging helper rejects anything that isn't a path, size, count, duration, ID or error kind, and the "no content reads" and "no secrets" markers never appear in the log, even with `--verbose`.
 14. **Logging and metrics tests** (done): each scanner's duration, item count and skipped paths land in the snapshot. Rotation keeps three files at the size limit. `logs` filters by level, run and command correctly. `stats --json` matches the snapshot. A scanner that times out shows up in Run details and in the notification text.
+15. **Mac cleanup** (see [Mac cleanup](#mac-cleanup-opt-in)): (1) `Item.Trash` set by the scanners and stored in snapshots, with tests that the `__pycache__` totals, Ollama rows and the other excluded rows never get one; (2) the section allowlist and the checks in `internal/clean`, with the saved review (`mac-review.json`); (3) `clean mac`; (4) `review mac`; (5) its security tests: a review pointing at `~/Documents`, through a symlink, with `..` or outside home is refused and its target kept; a path swapped for a symlink after the scan is refused; a folder replaced by a file is refused; the schedule never runs it.
 
 ## Open decisions
 
 - ~~Schedule~~: decided, Monday and Thursday at 9:00 AM (edit the plist and reinstall to change).
 - ~~Notification frequency~~: decided, every scheduled run; interactive runs only notify with `--notify`.
+- Mac cleanup: whether `review mac` should start with the safe rows ticked (the plan starts with nothing ticked), and whether 7 days is the right limit on the snapshot's age.
 - Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).
 - ~~libimobiledevice fallback~~: decided, go-ios alone (it covered every spike question).
