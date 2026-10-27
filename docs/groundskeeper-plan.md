@@ -11,7 +11,7 @@ It runs twice a week on macOS and generates an HTML report of disk space that ca
 - **A CLI that explains itself.** Grouped commands, rich help with examples and safety notes on every command, styled output, and shell completion.
 - **Runs unattended** twice a week via launchd, and posts a macOS notification when the report is ready.
 - **Tracks trends** by comparing each run with the previous one, so slow growth gets noticed early.
-- **Keeps private data private.** It measures sizes without reading contents, makes no network requests, and never puts secrets in its output (see [Security and privacy](#security-and-privacy)).
+- **Keeps private data private.** It measures sizes without reading contents, makes no network requests, and never puts secrets in its output (see [Security and privacy](#security-and-privacy)). With `gk mcp`, what it returns goes to the MCP client the user connects, and a cloud client sends it off the Mac (see [MCP server](#mcp-server-opt-in)).
 
 ## Architecture
 
@@ -386,6 +386,41 @@ Safety rules, on top of the ones every clean command follows:
 
 Not in this version: running-process checks (a build tool may be using a cache or `node_modules`; the tools recreate them, and the Trash allows undoing), and cleaning through a tool's own command (Ollama, Podman, rustup, Homebrew).
 
+## MCP server (opt-in)
+
+```
+groundskeeper mcp
+```
+
+`gk mcp` serves Groundskeeper's read-only results as [MCP](https://modelcontextprotocol.io) tools, so an assistant can answer "what's using my disk?" and suggest what to clean. It speaks MCP over stdio: the client starts `gk mcp` as a child process and talks to it on stdin and stdout. It opens no port and makes no connection. It uses the official Go SDK, [`github.com/modelcontextprotocol/go-sdk`](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk) v1.8.0 (`mcp.NewServer`, `mcp.AddTool`, `mcp.StdioTransport`).
+
+**Clients.**
+- **Claude Desktop** starts local servers from `claude_desktop_config.json` (Settings, Developer, Edit Config), with the absolute path `~/bin/groundskeeper` and the argument `mcp`.
+- **Ollama** has no MCP client of its own; a bridge such as `mcp-client-for-ollama` (`ollmcp`) or MCPHost connects a local model to stdio servers. Everything then stays on the Mac.
+
+**Privacy.** Groundskeeper still sends nothing anywhere, but whatever a tool returns goes to the client's model. With Claude Desktop that's Anthropic's servers, so paths that name projects, apps and accounts leave the Mac in the conversation; with a local Ollama model they don't. `gk mcp --help` and `gk help privacy` say this plainly, and the user chooses the client. To leak less by default, tool results write paths under the home folder as `~/...`, so the macOS user name isn't in them.
+
+**Tools.** All are read-only and marked `readOnlyHint: true`. None writes a file, so a tool call never touches the report, snapshots or history.
+
+| Tool | Returns |
+|---|---|
+| `scan` | A fresh scan, run like `scan --dry`: disk free and total, the reclaimable total, and each item with section, label, path, size, safety tag, note and hint |
+| `history` | The free-space trend and the fastest-growing items from the snapshots, like `gk history` |
+| `stats` | Recent runs' timings, skipped paths and clean totals from the snapshots, like `gk stats --json` |
+
+Not in this version: the iPhone (it needs the phone on USB and `photos-helper`), and every `clean` command, including dry runs. Each clean asks the user to confirm in their own terminal, and an assistant must not stand in for that; it can quote the hint or say "run `gk review mac`".
+
+**Rules.**
+- **stdout carries only the protocol.** Logging goes to the log file as usual (`cmd: mcp`), never to stdout or stderr, since a stray line on stdout breaks the client's connection. There are no spinners or colors.
+- **Tool results hold the same safe values as the report:** paths, sizes, dates, safety tags, counts and hints. Errors are reported by kind, as in the log.
+- **Arguments are bounded.** `history` and `stats` take a run count (1 to 50); `scan` takes none, so a client can't point a scan at another folder.
+- **One scan at a time.** A `scan` call while another is running gets an error, not a second scan.
+
+**Spike before building** (an hour or two, from Claude Desktop and from `ollmcp`):
+1. When Claude Desktop starts `gk mcp`, macOS may treat Claude Desktop as the responsible process for privacy permissions, so the scan would lack Full Disk Access unless Claude Desktop has it. Check what `scan` skips in each client, and have `doctor` or the tool result explain it.
+2. How long a client waits for a tool call. A full scan takes tens of seconds; if a client gives up first, `scan` needs progress notifications or a cached result.
+3. Whether a local Ollama model calls the tools reliably and copes with the size of `scan`'s result, or whether `scan` should return only the largest items per section.
+
 ## Command-line interface
 
 The CLI should be pleasant to use and explain itself. Every command has a one-line summary, a longer description, worked examples, and a note about what it will and won't touch.
@@ -414,6 +449,7 @@ Report (read-only)
   history     Show free-space trend and the fastest-growing items
   stats       Show scan timings, skipped paths and cleanup totals
   logs        Show recent log entries, with filters
+  mcp         Serve read-only results to an MCP client over stdio
 
 Review
   review photos   Step through duplicate photo groups
@@ -724,11 +760,13 @@ groundskeeper/
     - **Safe log fields:** the logging helper rejects anything that isn't a path, size, count, duration, ID or error kind, and the "no content reads" and "no secrets" markers never appear in the log, even with `--verbose`.
 14. **Logging and metrics tests** (done): each scanner's duration, item count and skipped paths land in the snapshot. Rotation keeps three files at the size limit. `logs` filters by level, run and command correctly. `stats --json` matches the snapshot. A scanner that times out shows up in Run details and in the notification text.
 15. **Mac cleanup** (see [Mac cleanup](#mac-cleanup-opt-in)): (1) `Item.Trash` set by the scanners and stored in snapshots, with tests that the `__pycache__` totals, Ollama rows and the other excluded rows never get one; (2) the section allowlist and the checks in `internal/clean`, with the saved review (`mac-review.json`); (3) `clean mac`; (4) `review mac`; (5) its security tests: a review pointing at `~/Documents`, through a symlink, with `..` or outside home is refused and its target kept; a path swapped for a symlink after the scan is refused; a folder replaced by a file is refused; the schedule never runs it.
+16. **MCP server** (see [MCP server](#mcp-server-opt-in)): (1) the spike's three questions, answered in the build log; (2) `gk mcp` with the `scan` tool over stdio, tested with `mcp.NewInMemoryTransports`; (3) `history` and `stats`; (4) the help text, `gk help privacy` and the Claude Desktop and `ollmcp` setup in the README. Tests: the tool list holds exactly `scan`, `history` and `stats`, all read-only; a session writes nothing to stdout but protocol messages; tool results hold the secret marker nowhere and write the home folder as `~`; a `scan` call writes no file; out-of-range run counts are rejected. `TestNoNetworkImports` allows the SDK only in `internal/mcp`, and the sandboxed run also starts `gk mcp`, lists the tools and calls `scan`.
 
 ## Open decisions
 
 - ~~Schedule~~: decided, Monday and Thursday at 9:00 AM (edit the plist and reinstall to change).
 - ~~Notification frequency~~: decided, every scheduled run; interactive runs only notify with `--notify`.
+- MCP: whether Claude Desktop is a supported client given that tool results leave the Mac, or only local clients such as Ollama are documented; and whether the SDK's size (it brings HTTP transports, `golang.org/x/oauth2` and `jwt` into the binary) is acceptable for a stdio-only server.
 - Mac cleanup: whether `review mac` should start with the safe rows ticked (the plan starts with nothing ticked), and whether 7 days is the right limit on the snapshot's age.
 - Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).
 - ~~libimobiledevice fallback~~: decided, go-ios alone (it covered every spike question).
