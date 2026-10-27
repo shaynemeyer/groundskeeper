@@ -529,6 +529,22 @@ func TestNoContentsOrSecretsInOutput(t *testing.T) {
 			t.Errorf("marker in %s", p)
 		}
 	}
+	if len(readSnapshots(t, home)) == 0 {
+		t.Fatal("scan wrote no snapshot")
+	}
+	state, err := os.ReadDir(stateDir(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range state {
+		data, err := os.ReadFile(filepath.Join(stateDir(home), e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte(marker)) {
+			t.Errorf("marker in state file %s", e.Name())
+		}
+	}
 }
 
 func TestBadConfigFails(t *testing.T) {
