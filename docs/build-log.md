@@ -7,19 +7,22 @@ One entry per build step from [the plan](groundskeeper-plan.md): what was built,
 ### Built
 
 - **Increment 1:** `scan.Item.Trash` is the one path whose move to the Trash is the whole cleanup for a row. The Caches scanner sets it on known caches and the other `~/Library/Caches` folders, Build artifacts on each artifact folder (not the `__pycache__` totals), Downloads on each entry, and AI models on Hugging Face `models--*` and `datasets--*` repos and LM Studio model folders. Ollama, ComfyUI, Toolchains, Containers, Unused apps and Browsers never set it. Snapshot rows (`history.Item`) now store `trash`, `safety` and `note`, so `review mac` can show them from the last snapshot.
+- **Increment 2:** the allowlist and the saved review (`internal/clean/mac.go`). `MacRules.Check` refuses a path that isn't clean or absolute, isn't inside the home folder, is gone, is a symlink, goes through a symlink (`filepath.EvalSymlinks` must give the same path), has changed between file and folder, or fits no rule for its section. The section rules call `scan.CacheTrashable`, `scan.ArtifactTrashable` (inside a configured project root) and `scan.HFTrashable` (`internal/scan/trash.go`), so the scanner and the clean-time check share one definition; Downloads must be a non-hidden direct child of `~/Downloads`, and LM Studio a folder two levels under either models folder. `NewMacReview` builds a `MacReview{Time, Items}` from ticked snapshot rows, refusing rows without `trash` and rows whose path is gone; `SaveMacReview` and `LoadMacReview` keep it in `~/.local/state/groundskeeper/mac-review.json` (`0600`), and `Without` drops moved items.
 
 ### Decisions
 
 - **Hugging Face repos that link into the shared `<hub>/blobs` store get no `Trash`.** Their size counts the shared files they symlink to (step 3), and trashing the repo folder removes only the links, so it wouldn't free what the row reports. `TestTrashModels` covers it, and fails when the check is removed. The plan's table and allowlist now say so.
+- **The review records each item's kind (`dir`).** The plan checks "the same kind as at scan time", but snapshots don't record it. The review records it with `os.Lstat` when saved, at most 7 days after the scan.
+- **A project root that is itself a symlink makes its artifacts unselectable.** Their paths go through the symlink, so `Check` refuses them. This follows the plan's rule as written; if it bites, the fix is to resolve roots in the config, not to relax the check.
 - **Both LM Studio locations are trashable,** `~/.lmstudio/models` and the older `~/.cache/lm-studio/models`, since the scanner lists both. The plan's allowlist now names both.
 
 ### Verified
 
-- `go test -race ./...` passes. New tests: `internal/scan/trash_test.go` (which rows get `Trash` and which never do) and `TestSnapshotRecordsTrashAndSafety` (a scan's snapshot keeps the npm row's `trash` and `safety`).
+- `go test -race ./...` passes. New tests: `internal/scan/trash_test.go` (which rows get `Trash` and which never do) and `TestSnapshotRecordsTrashAndSafety` (a scan's snapshot keeps the npm row's `trash` and `safety`), and `internal/clean/mac_test.go` (each section's rule accepted, 19 refusals with their reasons, the review round trip and `0600`). Removing the through-a-symlink check makes `TestMacRulesRefuse` fail.
 
 ### Open
 
-- Increments 2 to 5: the allowlist and checks in `internal/clean` with `mac-review.json`, `clean mac`, `review mac`, and the security tests.
+- Increments 3 to 5: `clean mac`, `review mac`, and the security tests.
 
 ## Step 17: user guide
 

@@ -34,10 +34,8 @@ func (m Models) Scan(ctx context.Context, home string) (Findings, error) {
 	measured = append(measured, comfyModels(home, m.ProjectRoots)...)
 	f.Skipped = append(f.Skipped, measure(ctx, m.Size, measured)...)
 	for i := range hf {
-		shared := hfSharedBytes(hub, measured[i].Path)
-		measured[i].Bytes += shared
-		if shared == 0 && hfTrashable(measured[i].Path) {
-			// Trashing a repo that links into the shared store frees nothing there.
+		measured[i].Bytes += hfSharedBytes(hub, measured[i].Path)
+		if HFTrashable(hub, measured[i].Path) {
 			measured[i].Trash = measured[i].Path
 		}
 	}
@@ -66,13 +64,6 @@ func hfRepos(hub string) []Item {
 		})
 	}
 	return items
-}
-
-// hfTrashable reports whether a hub repo folder may be moved to the Trash:
-// models--* and datasets--*, not spaces--*.
-func hfTrashable(repo string) bool {
-	name := filepath.Base(repo)
-	return strings.HasPrefix(name, "models--") || strings.HasPrefix(name, "datasets--")
 }
 
 // hfSharedBytes adds the files a repo links into the hub's shared blob
