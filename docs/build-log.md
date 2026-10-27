@@ -125,7 +125,7 @@ Checking the guide's claims against the code before each commit found six that w
 
 ### Open
 
-- `govulncheck` reports one vulnerability in a required module that the code doesn't call. It wasn't looked into in this step.
+- `govulncheck` reports one vulnerability in a required module that the code doesn't call. Looked into after step 17: it's GO-2026-5932, `golang.org/x/crypto/openpgp` being unmaintained and unsafe by design, affecting every `x/crypto` version with no fix (we're on the newest, v0.58.0). `x/crypto` comes in through go-ios and `software.sslmate.com/src/go-pkcs12` for `pbkdf2`, the only `x/crypto` package in the build (`go list -deps`), and nothing imports `openpgp`. Nothing to change; `CLAUDE.md` records it.
 - The Mac library path of `clean photos` still hasn't run against a real library (step 11).
 
 ## Step 11: photo grouping, review and clean photos

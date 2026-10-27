@@ -31,7 +31,7 @@ Groundskeeper is a macOS CLI (`groundskeeper`, alias `gk`), written in Go, that 
 
 `make build` also builds `bin/photos-helper` (`swift build --package-path helpers/photos-helper` for the helper alone). There is no `install-tunnel`: the spike showed go-ios needs no tunnel for what Groundskeeper does.
 
-Go is pinned to the latest patch release in `go.mod` (`go 1.27.3`). `GOTOOLCHAIN=auto` downloads it if needed. When `govulncheck` reports a vulnerability, upgrade the Go patch release or the module it names rather than suppressing it.
+Go is pinned to the latest patch release in `go.mod` (`go 1.27.3`). `GOTOOLCHAIN=auto` downloads it if needed. When `govulncheck` reports a vulnerability, upgrade the Go patch release or the module it names rather than suppressing it. One known exception: GO-2026-5932 (`golang.org/x/crypto/openpgp`, unmaintained and unsafe by design) is reported for the whole `x/crypto` module with no fixed version. Nothing imports `openpgp`; `x/crypto` comes in through go-ios and `go-pkcs12` for `pbkdf2`. Leave it; govulncheck would report it as affecting the code if anything ever called `openpgp`.
 
 ## Architecture (as planned)
 
