@@ -665,6 +665,32 @@ A LaunchAgent at `~/Library/LaunchAgents/com.lot86.groundskeeper.plist`:
 
 **Photos access.** The first time `photos-helper` reads the Mac Photos library, macOS asks to grant Photos access to the terminal app you ran it from (Terminal or iTerm2). A terminal inside a hardened app without the Photos entitlement, such as VS Code, is denied without a prompt (the TCC log says the entitlement is missing). That's one reason photo scanning is on-demand only. The device path (ImageCaptureCore) needs no Photos access.
 
+## User guide
+
+`docs/user-guide.md` explains how to use Groundskeeper, task by task, for anyone who wants to run it: someone who finds the repository, not only its owner. It assumes they can open Terminal and paste a command, explains what each command does before asking them to run it, and assumes nothing about their Mac (which browsers, tools, projects or phone they have) or that they've read this plan. The README stays short and links to it. `gk help` remains the reference for every flag, so the guide shows the common commands and points to `gk help <command>` for the rest instead of copying flag lists.
+
+**Contents**, in the order a new user needs them:
+1. **Install and first run:** what it needs (macOS 26 or later, which `photos-helper` requires; the Xcode Command Line Tools with Swift 6.2 for `swift build`; Go, where `GOTOOLCHAIN=auto` fetches the pinned release), cloning the repository, `make install` and what it puts where (`~/bin`, the `gk` link, zsh completion, the LaunchAgent), adding `~/bin` to `PATH`, granting Full Disk Access to the terminal app (and what to do if Photos access is asked for), setting `projectRoots` to where their code lives, and `gk doctor` with what each check means and how to fix it. Groundskeeper has no packaged release, so building from source is the only install.
+2. **Reading the report:** the sections, the safe, review and keep tags, what the reclaimable total counts, hints and why they're quoted, Skipped paths, changes since the last run, and Run details.
+3. **Cleaning up the Mac:** running a hint yourself, `clean browsers` (dry run, `--apply`, `--include-offline`, quitting the browser first), emptying the Trash to get the space back, and undoing a move from the Trash.
+4. **The schedule:** when it runs, what the notification says and means, running it now with `launchctl kickstart`, changing the times, and turning it off.
+5. **The iPhone:** connecting and trusting the Mac, `gk iphone`, the iCloud Photos question and how to answer it again (`gk setup photos`), the apps table, "probably unused" and why it needs weeks of scans, `iphoneKeep`, and `clean iphone-apps` (uninstalling loses the app's data; offloading in iPhone Storage keeps it).
+6. **Duplicate photos:** what counts as a duplicate, which photo is kept and why favorites, edited photos and photos in albums are never suggested, the review screen's keys, thumbnails in Ghostty and Quick Look elsewhere, `clean photos`, and the difference between the iPhone (permanent, typed count) and the Mac library (Recently Deleted). It suggests a first try on a few throwaway shots.
+7. **Trends and troubleshooting:** `history`, `stats` and `logs`, then the problems already met in building it, each with its fix: Photos access denied from VS Code's terminal, an old install missing new commands (`gk --version`, `make install`), new photos missing until the phone is reconnected, paths skipped without Full Disk Access, and a folder that times out.
+8. **Privacy and your data:** what it reads and never reads, what it stores and where (reports, snapshots, log, review files) with their permissions, why FileVault matters, the synced-folder warning, and how to remove everything (`make uninstall` and the folders to delete).
+9. **Configuration:** each key in `config.json` with its default and an example.
+
+**Rules.**
+- **Examples come from a fake home, never the real Mac.** Sample output, report excerpts and any screenshots are made by running against a `t.TempDir()`-style home with made-up projects, so no real path, app list, device name or photo appears, the same rule as the build log and `testdata/`. Screenshots live in `docs/assets/`.
+- **Written in the same plain voice as the help.** Rook's voice stays in notifications and the report, as the design brief says.
+- **Each build step that adds or changes a command updates the guide** in the same change, and its build-log entry says so. Steps 15 (Mac cleanup) and 16 (MCP server) each add a section: cleaning with `review mac` and `clean mac`, and connecting Claude Desktop or Ollama, including what leaves the Mac with each.
+
+**Kept in sync by tests** (`internal/cli`, reading `docs/user-guide.md`):
+- Every `gk` command line in the guide's code blocks parses: the command exists and its flags are real. Running `gk clean browsers --apply` through Cobra's parser without executing it is enough.
+- Every visible command and help topic is mentioned in the guide at least once.
+- Every key in `config.Config` appears in the Configuration section.
+- The guide passes the same personal-data check as `testdata/` (`fixtures.Check`), plus a check that it holds no home path other than `~`.
+
 ## Project layout
 
 ```
@@ -714,7 +740,9 @@ groundskeeper/
     template.html                  # embedded via go:embed
   launchd/com.lot86.groundskeeper.plist
   Makefile                         # build, install, uninstall, run, test
-  README.md
+  README.md                        # short; links to the guide
+  docs/user-guide.md               # task-by-task guide (see User guide)
+  docs/assets/                     # screenshots, made from a fake home
 ```
 
 ## Makefile targets
@@ -761,11 +789,13 @@ groundskeeper/
 14. **Logging and metrics tests** (done): each scanner's duration, item count and skipped paths land in the snapshot. Rotation keeps three files at the size limit. `logs` filters by level, run and command correctly. `stats --json` matches the snapshot. A scanner that times out shows up in Run details and in the notification text.
 15. **Mac cleanup** (see [Mac cleanup](#mac-cleanup-opt-in)): (1) `Item.Trash` set by the scanners and stored in snapshots, with tests that the `__pycache__` totals, Ollama rows and the other excluded rows never get one; (2) the section allowlist and the checks in `internal/clean`, with the saved review (`mac-review.json`); (3) `clean mac`; (4) `review mac`; (5) its security tests: a review pointing at `~/Documents`, through a symlink, with `..` or outside home is refused and its target kept; a path swapped for a symlink after the scan is refused; a folder replaced by a file is refused; the schedule never runs it.
 16. **MCP server** (see [MCP server](#mcp-server-opt-in)): (1) the spike's three questions, answered in the build log; (2) `gk mcp` with the `scan` tool over stdio, tested with `mcp.NewInMemoryTransports`; (3) `history` and `stats`; (4) the help text, `gk help privacy` and the Claude Desktop and `ollmcp` setup in the README. Tests: the tool list holds exactly `scan`, `history` and `stats`, all read-only; a session writes nothing to stdout but protocol messages; tool results hold the secret marker nowhere and write the home folder as `~`; a `scan` call writes no file; out-of-range run counts are rejected. `TestNoNetworkImports` allows the SDK only in `internal/mcp`, and the sandboxed run also starts `gk mcp`, lists the tools and calls `scan`.
+17. **User guide** (see [User guide](#user-guide)), for everything built in steps 1 to 14: (1) the sync tests, failing on an empty guide; (2) install, first run and reading the report; (3) cleaning the Mac and the schedule; (4) the iPhone and duplicate photos; (5) trends, troubleshooting, privacy and configuration; (6) the README trimmed to link to it. It can be written before steps 15 and 16, which then add their own sections.
 
 ## Open decisions
 
 - ~~Schedule~~: decided, Monday and Thursday at 9:00 AM (edit the plist and reinstall to change).
 - ~~Notification frequency~~: decided, every scheduled run; interactive runs only notify with `--notify`.
+- User guide: whether it needs screenshots, or text and sample output are enough. (Decided: it's written for everyone, not only the owner.)
 - MCP: whether Claude Desktop is a supported client given that tool results leave the Mac, or only local clients such as Ollama are documented; and whether the SDK's size (it brings HTTP transports, `golang.org/x/oauth2` and `jwt` into the binary) is acceptable for a stdio-only server.
 - Mac cleanup: whether `review mac` should start with the safe rows ticked (the plan starts with nothing ticked), and whether 7 days is the right limit on the snapshot's age.
 - Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).
