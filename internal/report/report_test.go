@@ -236,3 +236,70 @@ func TestRenderSaysUnusedNeedsHistory(t *testing.T) {
 		t.Error("report should say the unused list needs more history")
 	}
 }
+
+func photosSample() *iphone.Photos {
+	at := func(y int, m time.Month, d, h, min int) time.Time { return time.Date(y, m, d, h, min, 0, 0, time.Local) }
+	return &iphone.Photos{
+		Source: "device",
+		Assets: []iphone.Asset{
+			{ID: "e1", Created: at(2026, 3, 1, 10, 0), Bytes: 3_000_000},
+			{ID: "e2", Created: at(2026, 3, 1, 10, 0), Bytes: 3_000_000},
+			{ID: "n1", Created: at(2026, 4, 2, 15, 30), Bytes: 2_000_000, Favorite: true},
+			{ID: "n2", Created: at(2026, 4, 2, 15, 30), Bytes: 1_000_000, SidecarBytes: 500_000},
+			{ID: "n3", Created: at(2026, 4, 2, 15, 31), Bytes: 2_000_000},
+			{ID: "s1", Created: at(2025, 1, 2, 9, 0), Bytes: 400_000, Screenshot: true},
+			{ID: "s2", Created: at(2025, 6, 7, 9, 0), Bytes: 600_000, Screenshot: true},
+			{ID: "v1", Created: at(2026, 2, 14, 18, 0), Bytes: 50_000_000, SidecarBytes: 5_000_000, Video: true},
+		},
+		Duplicates: iphone.Duplicates{Groups: []iphone.Group{
+			{IDs: []string{"e1", "e2"}, Keep: []string{"e1"}, Exact: true},
+			{IDs: []string{"n1", "n2", "n3"}, Keep: []string{"n1"}},
+		}},
+		OldScreenshots: []string{"s1", "s2"},
+		LargestVideos:  []string{"v1"},
+	}
+}
+
+func TestPhonePhotoTotals(t *testing.T) {
+	p := phoneSample()
+	p.Photos = photosSample()
+	p.ScreenshotDays = 90
+
+	groups := p.PhotoGroups()
+	if len(groups) != 2 || groups[0].Freed != 3_000_000 || groups[1].Freed != 3_500_000 {
+		t.Fatalf("groups = %+v, want extras freeing 3,000,000 and 3,500,000 with sidecars", groups)
+	}
+	if !groups[0].Exact || groups[1].Exact || groups[1].Count != 3 {
+		t.Errorf("groups = %+v", groups)
+	}
+	if got := p.DuplicateBytes(); got != 6_500_000 {
+		t.Errorf("DuplicateBytes = %d, want 6500000", got)
+	}
+	s := p.OldScreenshots()
+	if s.Count != 2 || s.Bytes != 1_000_000 || s.Days != 90 || s.First.Year() != 2025 || s.Last.Month() != time.June {
+		t.Errorf("OldScreenshots = %+v", s)
+	}
+	if v := p.Videos(); len(v) != 1 || v[0].TotalBytes() != 55_000_000 {
+		t.Errorf("Videos = %+v", v)
+	}
+}
+
+func TestRenderShowsPhotos(t *testing.T) {
+	r := sample()
+	r.IPhone = phoneSample()
+	r.IPhone.Photos = photosSample()
+	r.IPhone.ScreenshotDays = 90
+	html := render(t, r)
+	for _, want := range []string{
+		"8 photos and videos, read from the iPhone over USB",
+		`<td>1 Mar 2026 10:00</td><td class="num">2</td><td>Exact copies</td><td class="num">3.0 MB</td>`,
+		`<td>2 Apr 2026 15:30</td><td class="num">3</td><td>Look alike</td><td class="num">3.5 MB</td>`,
+		"2 groups of duplicates; deleting the extras would free 6.5 MB.",
+		"2 screenshots older than 90 days take 1.0 MB, taken 2 Jan 2025 to 7 Jun 2025.",
+		`<td><span class="path">v1</span></td><td>14 Feb 2026</td><td class="num">55.0 MB</td>`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+}
