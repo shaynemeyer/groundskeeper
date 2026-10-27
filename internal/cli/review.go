@@ -36,9 +36,12 @@ func newReviewCmd(global *globalOptions) *cobra.Command {
 
 Safety: reviewing deletes nothing. It only saves your decisions.`,
 		Example: `  # Step through duplicate photo groups
-  gk review photos`,
+  gk review photos
+
+  # Tick Mac items to move to the Trash
+  gk review mac`,
 	}
-	cmd.AddCommand(newReviewPhotosCmd(global))
+	cmd.AddCommand(newReviewPhotosCmd(global), newReviewMacCmd(global))
 	return cmd
 }
 
@@ -169,15 +172,20 @@ func helperProblem(err error) string {
 
 // reviewInTerminal runs the review when stdin and out are both terminals.
 func reviewInTerminal(r tui.Review, out io.Writer) (tui.Review, error) {
-	f, ok := out.(*os.File)
-	if !ok || !ui.IsTerminal(f) || !ui.IsTerminal(os.Stdin) {
-		return r, errNoTerminal
-	}
-	m, err := tea.NewProgram(r, tea.WithOutput(out)).Run()
+	m, err := inTerminal(r, out)
 	if err != nil {
 		return r, err
 	}
 	r = m.(tui.Review)
 	fmt.Fprint(out, r.Cleanup())
 	return r, nil
+}
+
+// inTerminal runs m when stdin and out are both terminals.
+func inTerminal(m tea.Model, out io.Writer) (tea.Model, error) {
+	f, ok := out.(*os.File)
+	if !ok || !ui.IsTerminal(f) || !ui.IsTerminal(os.Stdin) {
+		return m, errNoTerminal
+	}
+	return tea.NewProgram(m, tea.WithOutput(out)).Run()
 }

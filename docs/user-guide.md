@@ -233,14 +233,35 @@ Things to know:
 
 ### Move ticked items to the Trash
 
-Caches, build artifacts, old downloads, and Hugging Face and LM Studio models can be moved to the Trash in one go. Tick them in `gk review mac`, then see what the review saved:
+Caches, build artifacts, old downloads, and Hugging Face and LM Studio models can be moved to the Trash in one go. First tick them, in a terminal:
+
+```sh
+gk review mac
+```
+
+```
+Tick what to move to the Trash. Nothing is moved until gk clean mac --apply.
+
+Caches
+  > [x]    812 MB  safe    Homebrew
+    [ ]    240 MB  safe    npm
+
+Build artifacts
+    [x]    410 MB  review  projects/old-site/node_modules  (commit 212 days ago)
+
+Ticked: 2 items, 1.2 GB.
+```
+
+It lists the last scan's rows by section, largest first, with nothing ticked. Use the arrows to move, space to tick, and enter to save; q or ctrl+c leaves without saving. Saving replaces any earlier review. The scan must be less than 7 days old, since folders may have changed since; if it's older, run `gk scan` first.
+
+Then see what the review saved:
 
 ```sh
 gk clean mac
 ```
 
 ```
-3 items, 1.2 GB, ticked in the review of Tue 27 Oct 09:00, will be moved to the Trash.
+2 items, 1.2 GB, ticked in the review of Tue 27 Oct 09:00, will be moved to the Trash.
 Dry run: nothing was changed. Add --apply to move them to the Trash.
 ```
 
