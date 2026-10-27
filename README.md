@@ -25,25 +25,31 @@ With an iPhone plugged in over USB, it also reports on the phone's apps, shared 
 - **`clean` is a dry run unless you add `--apply`.** Browser caches go to the Trash. Photos deleted from the Mac library go to Recently Deleted; photos deleted from the iPhone over USB are gone for good, and the command says so first. Site data, cookies and passwords are never touched.
 - **Nothing leaves your Mac.** It makes no network requests, measures file sizes without reading contents, and keeps its reports and logs private to your user.
 
-## Commands (planned)
+## Get started
 
-| Group                            | Commands                                               |
-| -------------------------------- | ------------------------------------------------------ |
-| Report (read-only)               | `scan` (default), `iphone`, `history`, `stats`, `logs` |
-| Review                           | `review photos`                                        |
-| Clean (dry run unless `--apply`) | `clean browsers`, `clean iphone-apps`, `clean photos`  |
-| Setup                            | `setup photos`, `config`, `doctor`                     |
+Groundskeeper needs macOS 26, the Xcode Command Line Tools and Go. Build and install it from source:
 
 ```sh
-make build                        # bin/groundskeeper
+git clone https://github.com/shaynemeyer/groundskeeper.git
+cd groundskeeper
+make install
+gk doctor
+```
+
+The [user guide](docs/user-guide.md) covers the rest: Full Disk Access, reading the report, cleaning up, the schedule, the iPhone and photos, and privacy. `gk help <command>` lists every option.
+
+## Development
+
+```sh
+make build                        # bin/groundskeeper and bin/photos-helper
 make test                         # go test ./... and govulncheck
 make run                          # scan and open the report
-make install                      # ~/bin/groundskeeper, gk, zsh completion
 ./bin/groundskeeper scan --dry    # summary only, writes nothing
 ```
 
 ## Docs
 
+- [User guide](docs/user-guide.md): installing and using Groundskeeper, task by task
 - [Implementation plan](docs/groundskeeper-plan.md): architecture, scanners, security, logging and build order
 - [Rook design brief](docs/rook-design-brief.md): the mascot, palette and voice
 - [Build log](docs/build-log.md): what each build step delivered, decisions and open items

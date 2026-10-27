@@ -2,6 +2,43 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 17: user guide
+
+### Built
+
+- **`docs/user-guide.md`,** written for anyone who finds the repository: install and first run, reading the report, cleaning up the Mac, the schedule, the iPhone, duplicate photos, trends and troubleshooting, privacy (with removing Groundskeeper), and configuration. It shows the common commands and points to `gk help <command>` for every flag.
+- **Sync tests** (`internal/cli/guide_test.go`). `TestGuideCommandsParse` runs every `gk` line in the guide's code blocks through Cobra's `Find` and `ParseFlags` without executing it, with the help command and the `--version` flag Fang adds. `TestGuideMentionsEveryCommand` requires each visible command (`gk <path>`) and help topic (`gk help <topic>`). `TestGuideDocumentsEveryConfigKey` requires every `config.Config` JSON key in the Configuration section. `TestGuideHasNoPersonalData` runs `fixtures.Check` and rejects `/Users/` and `/home/` paths.
+- **The README** lost its out-of-date "Commands (planned)" table (it listed a `config` command that doesn't exist) for a short Get started that links to the guide, and gained a Development block and a link in Docs.
+
+### Decisions
+
+- **The tests were committed with the last section,** not first: they fail until the guide is complete, and `main` stays green. The guide's sections were committed one at a time.
+- **The LaunchAgent label is allowed in the personal-data check.** `fixtures.Check` flags any bundle ID outside `com.apple.*` and `com.example.*`, so `com.lot86.groundskeeper.plist` tripped it; the test removes `doctor.Label` first. A third-party ID (`com.spotify.client`) added to the guide still failed it.
+- **Sample output is written by hand in the tool's format.** Even against a fake home, `scan` measures the real `/Applications`, so its Largest items would list this Mac's apps. The `clean browsers` sample came from a fake home with a made-up Brave profile.
+
+### Problems found
+
+Checking the guide's claims against the code before each commit found six that were wrong, all fixed before committing:
+- Reports aren't kept for six months: only snapshots are pruned (`history.Prune` in `scan.go`); reports accumulate.
+- Every report section shows its heading, even when empty (`template.html`).
+- `launchctl bootout` doesn't stop the schedule until the next `make install`: macOS loads `~/Library/LaunchAgents` again at login.
+- Only apps listed as probably unused come with a ready-made `clean iphone-apps` command; every app shows its bundle ID.
+- The log isn't "kept to a few MB": it rotates at 5 MB and keeps three old files.
+- The plan said macOS 15; `photos-helper`'s `Package.swift` requires macOS 26 (`platforms: [.macOS(.v26)]`) and Swift tools 6.2.
+
+`TestGuideMentionsEveryCommand` also found that the guide never mentioned `gk help safety`. The tests were first checked against a throwaway guide: they caught exactly the unknown command, unknown flag and unknown help topic, passed `--version`, `--help`, `help safety` and a line with a trailing comment, listed the 13 config keys left out, and flagged a home path. A script checked that all eight internal links resolve to headings.
+
+### Verified
+
+- `make test` passes, `gofmt -l .` is clean, and `govulncheck` reports no vulnerabilities that affect the code.
+
+### Open
+
+- Whether the Xcode Command Line Tools alone can build `photos-helper` (the guide says so) hasn't been tried on a Mac without Xcode.
+- The notification's Script Editor icon and the setting to allow it come from the plan, not from a check on a fresh Mac.
+- No screenshots yet; the open decision in the plan stands.
+- The internal links are checked by hand, not by a test.
+
 ## Step 14: logging and metrics tests
 
 ### Built
