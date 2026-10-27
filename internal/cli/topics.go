@@ -21,6 +21,10 @@ Only clean commands remove things, and only when you run them:
     --include-offline) to the Trash. It never touches cookies, logins,
     history or other site data, refuses a browser that is running, and never
     follows a symlink outside the browser's own folders.
+  - clean mac only moves what you ticked in gk review mac, and checks each
+    item again first: it must still be a cache, build artifact, download or
+    model inside your home folder, reached without a symlink. Anything
+    else is refused and left in place.
   - Anything moved goes to the Trash, so you can put it back until you
     empty it.
   - clean iphone-apps only takes bundle IDs from the last gk iphone scan,
