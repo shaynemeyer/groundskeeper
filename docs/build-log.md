@@ -2,6 +2,29 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 12: tests
+
+### Built
+
+- **An audit of the plan's list against the existing tests.** Each earlier step had added its own tests, and every item step 12 names already had them: artifact detection and staleness (`TestArtifactsDetectionRules`, `TestArtifactsStaleGitProjectIsSafe`), unused-app dating (`TestUnusedFlagsAppsUnchangedForDays`, `TestLastUsedDatesParsesMdlsOutput`), install-source detection (`TestAppsRemovalHintByInstallSource`), hardlink dedupe (`TestMeasureCountsHardlinksOnce`), Ollama manifests (`TestOllama*`), delta math (`TestDelta`, `TestHistoryListsScansAndGrowth`), iPhone parsing from scrubbed recordings and canned `photos-helper` JSON, every command's help (`TestEveryCommandHasHelpContent`), and no escape codes when stdout isn't a terminal (`internal/cli/cli_test.go`). The audit used test names and `go test -cover ./...` to find what wasn't covered.
+- **The report's Photos section** (`internal/report`, 48.7% to 90.8%). `TestPhonePhotoTotals` checks `PhotoGroups`, `DuplicateBytes`, `OldScreenshots` and `Videos`: kept photos free nothing, sidecar bytes count, and screenshots report their first and last dates. `TestRenderShowsPhotos` checks the rendered rows and sentences.
+- **`internal/metrics`** (0% to 100%). `TestScannerStatus` covers the one-minute boundary of `Slow` and each `Status`, with an error taking precedence over timeouts and slowness. `TestRunErrorsCountsFailedScanners` checks that timeouts alone don't count as failures, which `doctor` and `scan` rely on.
+
+### Decisions
+
+- **`internal/iphone/device.go` stays untested.** `Read`, `Uninstall` and their helpers are thin calls into go-ios over USB; what they return is parsed by `Parse`, which `parse_test.go` covers with scrubbed recordings. Faking go-ios would test the fake. The same goes for `iphone/record`, a command run by hand that writes only through the tested scrubber.
+- **Every new test was checked by breaking the code.** Each passed on its first run, so the code under test was changed to be wrong (`PhotoGroups` counting `Bytes` without sidecars; `Slow` using `>` instead of `>=`), the tests were confirmed to fail, and the change was reverted with `git checkout`.
+
+### Verified
+
+- `make test` passes (`go test ./...` and `govulncheck`), and `go test -race ./...` passes.
+- Coverage by package: clean 94.2%, cli 85.6%, config 77.4%, doctor 84.4%, fixtures 98.3%, history 89.5%, iphone 72.0% (the rest is `device.go`), logging 86.4%, metrics 100%, notify 100%, report 90.8%, scan 88.7%, size 93.2%, tui 94.9%, ui 80.5%.
+
+### Open
+
+- `govulncheck` reports one vulnerability in a required module that the code doesn't call. It wasn't looked into in this step.
+- The Mac library path of `clean photos` still hasn't run against a real library (step 11).
+
 ## Step 11: photo grouping, review and clean photos
 
 ### Built
