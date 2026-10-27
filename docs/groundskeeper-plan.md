@@ -522,7 +522,7 @@ Cleanup runs write a small snapshot of their own (`clean-YYYY-MM-DDTHHMM.json`) 
 - **`groundskeeper stats`:** the same numbers in the terminal, as a Lip Gloss table, for the last run or with `--runs N` for trends (for example, a scanner that keeps getting slower). `--json` prints the raw metrics.
 - **`groundskeeper logs`:** shows recent log entries, formatted and colored. Filter with `--level warn`, `--run last`, `--cmd clean`, or follow live with `--follow`. `--json` prints raw lines.
 - **`groundskeeper doctor`:** reports the last scheduled run's time and status, so a schedule that stopped running gets noticed.
-- **Notification:** if a scheduled run had errors or skipped paths it didn't skip last time, the notification says so, for example "Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy. 2 scanners had problems; see the report." Snapshots from before skipped paths were recorded count as unknown, not as "nothing skipped".
+- **Notification:** if a scheduled run had scanners that failed or timed out on a folder, or skipped paths it didn't skip last time, the notification says so. Timeouts are mentioned on every run they happen, not only the first, because each one leaves that report incomplete. For example, for example "Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy. 2 scanners had problems; see the report." Snapshots from before skipped paths were recorded count as unknown, not as "nothing skipped".
 
 ## Size engine
 

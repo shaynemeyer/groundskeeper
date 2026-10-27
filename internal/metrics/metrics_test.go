@@ -29,3 +29,10 @@ func TestRunErrorsCountsFailedScanners(t *testing.T) {
 		t.Fatalf("Errors() = %d, want 2", got)
 	}
 }
+
+func TestRunProblemsCountsFailuresAndTimeouts(t *testing.T) {
+	r := Run{Scanners: []Scanner{{Error: "timeout"}, {Timeouts: 3}, {}, {Error: "permission", Timeouts: 1}, {DurationMS: SlowScanner.Milliseconds()}}}
+	if got := r.Problems(); got != 3 {
+		t.Fatalf("Problems() = %d, want 3", got)
+	}
+}

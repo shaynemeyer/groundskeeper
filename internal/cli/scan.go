@@ -27,7 +27,6 @@ import (
 )
 
 const (
-	folderTimeout = 2 * time.Minute
 	sizeWorkers   = 6
 	topItems      = 5
 	historyMonths = 6
@@ -37,6 +36,8 @@ const (
 var (
 	appDirs    = func(home string) []string { return nil } // nil: /Applications and ~/Applications
 	toolRunner scan.Runner                                 // nil: the real podman, mdls, plutil, ps and brew
+	// folderTimeout is how long the size engine spends on one folder.
+	folderTimeout = 2 * time.Minute
 )
 
 type scanOptions struct {
@@ -326,7 +327,7 @@ func sendNotification(ctx context.Context, log *logging.Logger, rep report.Repor
 	msg := notify.Message(notify.Summary{
 		Free:        rep.Disk.Free,
 		Reclaimable: rep.Reclaimable(),
-		Failed:      rep.Run.Errors(),
+		Problems:    rep.Run.Problems(),
 		NewSkipped:  rep.Deltas.NewSkip,
 	})
 	if err := notify.Send(ctx, notify.Runner(run), msg); err != nil {

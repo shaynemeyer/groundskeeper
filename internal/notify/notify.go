@@ -28,7 +28,7 @@ type Runner func(ctx context.Context, name string, args ...string) ([]byte, erro
 type Summary struct {
 	Free        int64
 	Reclaimable int64
-	Failed      int // scanners that failed
+	Problems    int // scanners that failed or timed out
 	NewSkipped  int // paths skipped now that weren't skipped last time
 }
 
@@ -37,8 +37,8 @@ type Summary struct {
 func Message(s Summary) string {
 	msg := fmt.Sprintf("Rook's report is ready: %s free, about %s to tidy.", ui.Bytes(s.Free), ui.Bytes(s.Reclaimable))
 	var problems []string
-	if s.Failed > 0 {
-		problems = append(problems, plural(s.Failed, "scanner", "scanners")+" had problems")
+	if s.Problems > 0 {
+		problems = append(problems, plural(s.Problems, "scanner", "scanners")+" had problems")
 	}
 	if s.NewSkipped > 0 {
 		problems = append(problems, plural(s.NewSkipped, "new path", "new paths")+" couldn't be read")

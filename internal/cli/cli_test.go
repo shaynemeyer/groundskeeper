@@ -465,6 +465,24 @@ func TestNotifyPostsOneNotification(t *testing.T) {
 	}
 }
 
+func TestNotifyMentionsTimeoutsEveryRun(t *testing.T) {
+	fakeHome(t)
+	sent := fakeOsascript(t)
+	folderTimeout = time.Nanosecond
+	t.Cleanup(func() { folderTimeout = 2 * time.Minute })
+	run(t, "scan", "--notify")
+	run(t, "scan", "--notify")
+
+	if len(*sent) != 2 {
+		t.Fatalf("notifications = %q", *sent)
+	}
+	for i, msg := range *sent {
+		if !strings.Contains(msg, "had problems") {
+			t.Errorf("run %d notification %q doesn't mention the timeout", i+1, msg)
+		}
+	}
+}
+
 func TestNoNotificationWithoutFlagOrOnDryRun(t *testing.T) {
 	fakeHome(t)
 	sent := fakeOsascript(t)

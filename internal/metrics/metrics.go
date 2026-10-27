@@ -63,6 +63,18 @@ func (r Run) Errors() int {
 	return n
 }
 
+// Problems counts scanners that failed or timed out on a folder, either of
+// which leaves the report incomplete.
+func (r Run) Problems() int {
+	n := 0
+	for _, s := range r.Scanners {
+		if s.Error != "" || s.Timeouts > 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // Clean describes one clean command run.
 type Clean struct {
 	Time       time.Time `json:"time"`

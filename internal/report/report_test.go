@@ -238,7 +238,9 @@ func TestRenderSaysUnusedNeedsHistory(t *testing.T) {
 }
 
 func photosSample() *iphone.Photos {
-	at := func(y int, m time.Month, d, h, min int) time.Time { return time.Date(y, m, d, h, min, 0, 0, time.Local) }
+	at := func(y int, m time.Month, d, h, min int) time.Time {
+		return time.Date(y, m, d, h, min, 0, 0, time.Local)
+	}
 	return &iphone.Photos{
 		Source: "device",
 		Assets: []iphone.Asset{

@@ -9,9 +9,9 @@ import (
 
 func TestMessage(t *testing.T) {
 	cases := map[Summary]string{
-		{Free: 118_000_000_000, Reclaimable: 35_000_000_000}: "Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy.",
-		{Free: 1, Reclaimable: 1, Failed: 2}:                 "Rook's report is ready: 1 B free, about 1 B to tidy. 2 scanners had problems; see the report.",
-		{Free: 1, Reclaimable: 1, Failed: 1, NewSkipped: 3}:  "Rook's report is ready: 1 B free, about 1 B to tidy. 1 scanner had problems, 3 new paths couldn't be read; see the report.",
+		{Free: 118_000_000_000, Reclaimable: 35_000_000_000}:  "Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy.",
+		{Free: 1, Reclaimable: 1, Problems: 2}:                "Rook's report is ready: 1 B free, about 1 B to tidy. 2 scanners had problems; see the report.",
+		{Free: 1, Reclaimable: 1, Problems: 1, NewSkipped: 3}: "Rook's report is ready: 1 B free, about 1 B to tidy. 1 scanner had problems, 3 new paths couldn't be read; see the report.",
 	}
 	for in, want := range cases {
 		if got := Message(in); got != want {
