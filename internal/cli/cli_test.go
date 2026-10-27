@@ -300,6 +300,24 @@ func TestSnapshotRecordsScannerMetrics(t *testing.T) {
 	}
 }
 
+func TestSnapshotRecordsSkippedPaths(t *testing.T) {
+	home := fakeHome(t)
+	locked := filepath.Join(home, ".npm/locked")
+	if err := os.Mkdir(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o700) })
+	run(t, "scan")
+
+	s := readSnapshots(t, home)[0]
+	if caches := s.Run.Scanners[0]; caches.Name != "Caches" || caches.Skipped != 1 {
+		t.Errorf("caches metrics = %+v, want 1 skipped", caches)
+	}
+	if !slices.Contains(s.Skipped, locked) {
+		t.Errorf("snapshot skipped = %q, want %s", s.Skipped, locked)
+	}
+}
+
 func TestAppliedCleanShowsAsFreedInNextReport(t *testing.T) {
 	home := fakeHome(t)
 	chromeCache(t, home)

@@ -117,6 +117,23 @@ func TestRotationKeepsThreeFiles(t *testing.T) {
 	}
 }
 
+func TestRotationStartsAtTheLimit(t *testing.T) {
+	for size, rotated := range map[int]bool{49: false, 50: true} {
+		path := filepath.Join(t.TempDir(), "groundskeeper.log")
+		if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, c, err := Open(path, Options{Level: "info", MaxBytes: 50})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
+		if _, err := os.Stat(path + ".1"); (err == nil) != rotated {
+			t.Errorf("%d bytes: rotated = %v, want %v", size, err == nil, rotated)
+		}
+	}
+}
+
 func TestErrKindHidesMessage(t *testing.T) {
 	secret := errors.New("token=abc123")
 	cases := map[error]string{
