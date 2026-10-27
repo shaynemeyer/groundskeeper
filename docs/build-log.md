@@ -2,6 +2,33 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 13: security tests
+
+### Built
+
+- **An audit of the plan's 14 items against the existing tests.** Twelve were already covered by tests written alongside their features: symlink escape (`TestSymlinkedCacheIsRefusedAndTargetKept`, `TestSymlinkedProfileIsNeverFollowed`), path traversal (`TestAllowedRejectsDotDotAndOutsidePaths`), HTML escaping (`TestRenderEscapesFileNames`, `TestIPhoneReportEscapesPhotoIDs`), hint quoting (`TestShellQuote` and the scanners' hint tests), file permissions, the notifier's arguments (`TestSendPassesTextAsArguments`), iPhone and photo IDs (`TestIPhoneAppsRefuses`, `TestNewSelectionRefusesUnknownID`, and `TestCleanPhotosDeviceDeletes`, which checks the helper's stdin is exactly the saved review), pruning, FileVault, the synced output folder, the fixture scrubber and guard, and safe log fields. Safe log fields are enforced when the code compiles: `logging.Field` wraps an unexported `slog.Attr`, so only the helpers can make one, and nothing outside `internal/logging` logs through `slog`.
+- **No content reads and no secrets now cover the snapshot.** `TestNoContentsOrSecretsInOutput` checked stdout, the report and the log, but not the snapshot the plan names. It now checks every file in the state folder for the marker, and fails if the scan wrote no snapshot.
+- **No network, as two tests** (`cmd/groundskeeper/network_test.go`). `TestNoNetworkImports` runs `go list` on the module and fails if any of its packages imports `net`, `net/...`, `crypto/tls` or `golang.org/x/net`, or if any package but `internal/iphone` imports go-ios. `TestScanMakesNoConnections` builds the binary and runs a full `scan` against a temporary home under `sandbox-exec` with the profile `(deny network-outbound (with send-signal SIGKILL))`, so any connection, Unix sockets included, kills it. The scan must exit 0 and write its report. First, as a control, `iphone --dry` must be killed: it connects to usbmuxd, so this shows the sandbox catches this binary's connections.
+
+### Decisions
+
+- **The plan's "dialer that fails on any connection" isn't possible in Go.** There's no global dialer to replace; a test could only swap one for code that uses it. The binary also links `net`, `net/http` and `crypto/tls` through go-ios (`go list -deps`), so checking the binary's dependencies would always fail. The two tests above replace it, and the plan now says so.
+- **The sandbox kills instead of only denying.** A denied connection returns an error the scan might log and carry on from, so the test could pass without noticing. Proven with curl to 127.0.0.1: without a deny rule it tried and got "connection refused" (exit 7); with the rule it was killed (exit 137, SIGKILL).
+- **The strict profile denies Unix sockets too.** A full `scan` under it still exits 0 and writes the report and snapshot, so the scan opens no socket of any kind, and the stricter rule costs nothing.
+- **The `iphone --dry` control stays in the test** because `sandbox-exec` is deprecated: if a future macOS stops enforcing the profile, the control fails instead of the scan check passing for the wrong reason.
+
+### Verified
+
+- Each new check was broken on purpose and failed, then reverted with `git checkout`: copying `GITHUB_TOKEN` into `Run.Command` (which only the snapshot stores) gave "marker in state file"; a `net/http` import in `notify` and a go-ios import in `cli` each failed `TestNoNetworkImports`; a `net.Dial` to 127.0.0.1 at the start of `runScan` gave "scan exited -1".
+- `TestScanMakesNoConnections` takes about 6 seconds, and passes both inside the agent's sandbox and outside it.
+- `make test` passes, with `govulncheck` reporting no vulnerabilities that affect the code.
+
+### Open
+
+- The sandboxed scan reads the real `/Applications` for the unused-apps scanner (read-only); the fake home only covers `$HOME`.
+- `sandbox-exec` is deprecated. If it goes away, `TestNoNetworkImports` remains.
+- There is no CI yet, so the plan's "in CI" doesn't apply; the sandboxed test runs in `make test`.
+
 ## Step 12: tests
 
 ### Built
