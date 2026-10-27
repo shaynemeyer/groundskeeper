@@ -37,7 +37,7 @@ action is written to ~/Library/Logs/groundskeeper.log.`,
   # See what uninstalling an iPhone app would free
   gk clean iphone-apps com.example.game`,
 	}
-	cmd.AddCommand(newCleanBrowsersCmd(global), newCleanIPhoneAppsCmd(global), newCleanPhotosCmd(global))
+	cmd.AddCommand(newCleanBrowsersCmd(global), newCleanIPhoneAppsCmd(global), newCleanPhotosCmd(global), newCleanMacCmd(global))
 	return cmd
 }
 

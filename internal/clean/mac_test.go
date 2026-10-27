@@ -1,12 +1,14 @@
 package clean
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/logging"
 )
 
 // realHome is a fake home without symlinks in its path; t.TempDir is
@@ -177,5 +179,39 @@ func TestMacReviewRoundTrip(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("review file: %v %v", info, err)
+	}
+}
+
+func TestMacCleanMovesOnlyAllowedItems(t *testing.T) {
+	home := realHome(t)
+	npm := mkdir(t, filepath.Join(home, ".npm"))
+	stuck := mkfile(t, filepath.Join(home, "Downloads/stuck.dmg"))
+	documents := mkdir(t, filepath.Join(home, "Documents/taxes"))
+	var trashed []string
+	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != trashTool || len(args) != 2 || args[0] != "-s" {
+			t.Fatalf("ran %s %v", name, args)
+		}
+		if args[1] == stuck {
+			return nil, errors.New("exit status 1")
+		}
+		trashed = append(trashed, args[1])
+		return nil, nil
+	}
+	r := MacReview{Items: []MacItem{
+		{Section: "Caches", Label: "npm", Trash: npm, Bytes: 300, Dir: true},
+		{Section: "Downloads", Label: "taxes", Trash: documents, Bytes: 200, Dir: true},
+		{Section: "Downloads", Label: "stuck.dmg", Trash: stuck, Bytes: 100},
+	}}
+
+	got := Mac{Rules: macRules(home), Run: run, Log: logging.Discard()}.Clean(context.Background(), r)
+	want := []string{Moved, Refused, Failed}
+	for i, a := range got {
+		if a.Outcome != want[i] {
+			t.Errorf("%s: outcome %q (%s), want %q", a.Item.Label, a.Outcome, a.Reason, want[i])
+		}
+	}
+	if len(trashed) != 1 || trashed[0] != npm {
+		t.Errorf("trashed %v, want only npm", trashed)
 	}
 }

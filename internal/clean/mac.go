@@ -1,6 +1,7 @@
 package clean
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/logging"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 )
 
@@ -147,6 +149,45 @@ func (m MacRules) allowed(section, path string) bool {
 			lmStudio == filepath.Join(m.Home, ".cache", "lm-studio", "models")
 	}
 	return false
+}
+
+// MacAction is what happened to one review item.
+type MacAction struct {
+	Item    MacItem
+	Outcome string // Moved, Refused or Failed
+	Reason  string // why it was refused or failed
+}
+
+// Mac moves the items of a saved review to the Trash, checking each one
+// against Rules first.
+type Mac struct {
+	Rules MacRules
+	Run   scan.Runner // runs trash
+	Log   *logging.Logger
+}
+
+// Clean checks and moves every item of r, one action per item.
+func (m Mac) Clean(ctx context.Context, r MacReview) []MacAction {
+	var out []MacAction
+	for _, it := range r.Items {
+		out = append(out, m.act(ctx, it))
+	}
+	return out
+}
+
+func (m Mac) act(ctx context.Context, it MacItem) MacAction {
+	a := MacAction{Item: it}
+	if reason := m.Rules.Check(it); reason != "" {
+		a.Outcome, a.Reason = Refused, reason
+		m.Log.Warn("refused", logging.Path(it.Trash), logging.ID("reason", reason))
+		return a
+	}
+	a.Outcome = Moved
+	if _, err := m.Run(ctx, trashTool, "-s", it.Trash); err != nil {
+		a.Outcome, a.Reason = Failed, "trash could not move it"
+	}
+	m.Log.Info("item", logging.Path(it.Trash), logging.Bytes(it.Bytes), logging.ID("outcome", a.Outcome))
+	return a
 }
 
 // inside reports whether path is strictly below dir.

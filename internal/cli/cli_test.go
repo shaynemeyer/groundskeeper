@@ -22,7 +22,12 @@ const marker = "GK-SECRET-MARKER-7f3a"
 
 func fakeHome(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
+	// clean mac refuses paths through a symlink, and t.TempDir is under
+	// /var, a symlink to /private/var.
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
 	t.Setenv("NO_COLOR", "")
 	appDirs = func(home string) []string { return []string{filepath.Join(home, "Applications")} }

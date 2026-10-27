@@ -189,7 +189,7 @@ How long each part of the scan took, and how much it found. A part that was slow
 
 ## Cleaning up the Mac
 
-Groundskeeper suggests; you decide. There are two ways to act on the report. For everything Groundskeeper will and won't delete, run `gk help safety`.
+Groundskeeper suggests; you decide. There are three ways to act on the report. For everything Groundskeeper will and won't delete, run `gk help safety`.
 
 ### Run a suggested command yourself
 
@@ -203,7 +203,7 @@ Read the command before you run it. Items tagged **review** deserve a second loo
 
 ### Clear browser caches
 
-Browser caches are the one kind of Mac cleanup Groundskeeper does for you, because doing it by hand risks deleting the wrong folder. First see what it would do:
+Groundskeeper clears browser caches for you, because doing it by hand risks deleting the wrong folder. First see what it would do:
 
 ```sh
 gk clean browsers
@@ -230,6 +230,29 @@ Things to know:
 - **Your browsing data is never touched:** cookies, logins, history, bookmarks and site data stay. The browser just downloads pages and images again as you visit them, so the first visits may be a little slower.
 - **Offline data,** such as cached web apps and Chrome's on-device AI model, is left alone unless you add `--include-offline`. Sites that work offline will need a connection the next time you open them.
 - If a folder can't be fully read (usually Safari's, without Full Disk Access), it's refused rather than partly moved.
+
+### Move ticked items to the Trash
+
+Caches, build artifacts, old downloads, and Hugging Face and LM Studio models can be moved to the Trash in one go. Tick them in `gk review mac`, then see what the review saved:
+
+```sh
+gk clean mac
+```
+
+```
+3 items, 1.2 GB, ticked in the review of Tue 27 Oct 09:00, will be moved to the Trash.
+Dry run: nothing was changed. Add --apply to move them to the Trash.
+```
+
+Then move them, answering `y` when asked:
+
+```sh
+gk clean mac --apply
+```
+
+Before each item moves, it's checked again. It must still be the kind of thing its section cleans (a cache, a build artifact in one of your project folders, a download, a model), inside your home folder, reached without a symlink, and still a file or a folder as it was. Anything else is refused, left where it is, and listed with the reason. Refused items, and any the Trash couldn't take, stay in the saved review.
+
+Only rows that one move to the Trash fully cleans can be ticked. Ollama models, toolchains, containers, apps and `__pycache__` totals need their own tool, so run their suggested command instead. A Hugging Face model whose files live in the shared store needs `hf cache rm`.
 
 ### Get the space back
 
@@ -470,7 +493,7 @@ Run `gk help privacy` for the short version.
 | What | Where |
 |---|---|
 | Reports | `~/Reports/groundskeeper/` (or your `outputDir`) |
-| Saved scans, your photo review and the iPhone's history | `~/.local/state/groundskeeper/` |
+| Saved scans, your photo and Mac reviews, and the iPhone's history | `~/.local/state/groundskeeper/` |
 | Log | `~/Library/Logs/groundskeeper.log`, started afresh at 5 MB with the last three kept, plus `groundskeeper.launchd.log` from the schedule |
 | Settings | `~/.config/groundskeeper/config.json`, if you create it |
 
