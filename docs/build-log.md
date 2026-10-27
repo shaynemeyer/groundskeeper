@@ -2,6 +2,35 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 14: logging and metrics tests
+
+### Built
+
+- **An audit of the plan's five items.** Three were covered: rotation keeping three files (`TestRotationKeepsThreeFiles`), `logs` filtering by level, run and command (`TestReadFilters`, and `TestLogsFiltersAndJSON` through the CLI), and `stats --json` matching the snapshot byte for byte (`TestStatsJSONMatchesSnapshot`). `TestSnapshotRecordsScannerMetrics` checked names, item counts and bytes but not skipped paths, and the notification didn't mention timeouts the way the plan said.
+- **`TestSnapshotRecordsSkippedPaths`:** an unreadable folder in `.npm` gives the Caches scanner `Skipped: 1`, and the path is in the snapshot's skipped list.
+- **`TestRotationStartsAtTheLimit`:** with a 50-byte limit, a 49-byte log stays and a 50-byte log rotates.
+- **Timed-out scanners in every notification.** `metrics.Run.Problems()` counts scanners that failed or timed out on a folder, and the notification's "N scanners had problems" uses it in place of `Run.Errors()`. `notify.Summary.Failed` became `Problems`. `doctor` keeps `Errors()`, since it says "scanner(s) failed". `folderTimeout` in `internal/cli/scan.go` became a variable so `TestNotifyMentionsTimeoutsEveryRun` can force a timeout; it is still two minutes.
+
+### Decisions
+
+- **Timeouts are mentioned on every run, not only the first.** The plan's notification rule mentioned errors and paths skipped for the first time; a timed-out folder is recorded as a skipped path (`size.Skip` with reason `timeout`), so it was mentioned once, and never on a first run with no snapshot to compare with. A folder that times out every run leaves every report incomplete, so the user chose to mention it each time. The plan's notification rule now says so.
+- **Scanner duration isn't asserted.** The skipped-paths test recorded `DurationMS: 0` for Caches on the fake home, so a non-zero check would fail at random.
+- **A slow scanner alone isn't a problem** for the notification; Run details still highlights it.
+
+### Problems found
+
+- **No notification mentioned timeouts.** With `folderTimeout` at one nanosecond, two `scan --notify` runs both posted "Rook's report is ready: 123.4 GB free, about 0 B to tidy." with nothing about the timeouts: the first had no previous snapshot, and in the second the same paths were skipped last time. Root cause: the notification counted only `Error`, and timeouts only reached it through `NewSkip`.
+- **Step 12's `report_test.go` wasn't gofmt-formatted.** Found by `gofmt -l` in this step and fixed in the same commit.
+
+### Verified
+
+- Each new test was checked by breaking the code: dropping `Skipped` from the scanner metrics, rotating at `<=` instead of `<`, and dropping the timeouts condition from `Problems` (which failed both `TestRunProblemsCountsFailuresAndTimeouts` and the CLI test).
+- `make test` passes, `gofmt -l .` is clean, and `govulncheck` reports no vulnerabilities that affect the code.
+
+### Open
+
+- The scheduled run uses the installed binary; `make install` is needed for its notifications to mention timeouts.
+
 ## Step 13: security tests
 
 ### Built
