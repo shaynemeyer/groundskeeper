@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,5 +38,46 @@ func TestNoNetworkImports(t *testing.T) {
 				t.Errorf("%s imports %s; only %s may talk to the iPhone", pkg, imp, usbPackage)
 			}
 		}
+	}
+}
+
+// noNetwork is a sandbox profile that kills the process on any outbound
+// connection, Unix sockets included.
+const noNetwork = `(version 1) (allow default) (deny network-outbound (with send-signal SIGKILL))`
+
+// sandboxed runs the built binary under noNetwork with home as HOME and
+// returns its exit code, -1 when a signal killed it.
+func sandboxed(t *testing.T, bin, home string, args ...string) int {
+	t.Helper()
+	cmd := exec.Command("/usr/bin/sandbox-exec", append([]string{"-p", noNetwork, bin}, args...)...)
+	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
+	out, err := cmd.CombinedOutput()
+	if exit, ok := err.(*exec.ExitError); ok {
+		t.Logf("%v: %s", args, out)
+		return exit.ExitCode()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return 0
+}
+
+// TestScanMakesNoConnections runs a full scan where any connection attempt
+// kills it. The iPhone read, which connects to usbmuxd, shows the sandbox
+// catches this binary's connections.
+func TestScanMakesNoConnections(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "groundskeeper")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	home := t.TempDir()
+	if code := sandboxed(t, bin, home, "iphone", "--dry"); code != -1 {
+		t.Fatalf("iphone exited %d under the sandbox, want killed: the sandbox isn't catching connections", code)
+	}
+	if code := sandboxed(t, bin, home, "scan"); code != 0 {
+		t.Fatalf("scan exited %d under the sandbox, want 0: it tried to connect", code)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Reports/groundskeeper/latest.html")); err != nil {
+		t.Fatalf("scan wrote no report: %v", err)
 	}
 }
