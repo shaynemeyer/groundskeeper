@@ -172,7 +172,7 @@ How long each part of the scan took, and how much it found. A part that was slow
 
 ## Cleaning up the Mac
 
-Groundskeeper suggests; you decide. There are two ways to act on the report.
+Groundskeeper suggests; you decide. There are two ways to act on the report. For everything Groundskeeper will and won't delete, run `gk help safety`.
 
 ### Run a suggested command yourself
 
@@ -373,3 +373,140 @@ A photo that changed since `gk iphone` read it, or is no longer there, is left a
 ### Photos on the Mac need permission
 
 Reading the Mac Photos library needs Photos access for your terminal app; macOS asks the first time. Some terminals can't get it at all, notably the one built into VS Code, which macOS refuses without asking. Use Terminal, Ghostty or iTerm2 for anything involving the Mac library. `gk doctor` shows whether access is granted.
+
+## Trends and troubleshooting
+
+### See how your disk changes
+
+```sh
+gk history
+```
+
+Lists recent scans with free space and how much it changed since the scan before, then the items that grew most between the last two scans. Show more scans with `--runs`, for example `gk history --runs 20`. Scans are remembered for six months.
+
+```sh
+gk stats
+```
+
+Shows how the last scan went: how long each part took, what it found, what it skipped, and what clean commands did since. `gk stats --runs 5` compares the last five scans, which shows a part of the scan that keeps getting slower.
+
+```sh
+gk logs
+```
+
+Shows the newest entries from Groundskeeper's log. Useful filters:
+
+```sh
+gk logs --run last --level warn   # problems in the most recent run
+gk logs --cmd clean               # everything clean commands did
+gk logs -f                        # follow new entries as they come
+```
+
+### Common problems
+
+**`gk: command not found`.** `~/bin` isn't on your `PATH`; see [Let your shell find gk](#let-your-shell-find-gk).
+
+**A command or option from this guide doesn't exist.** Your installed copy is older than the guide. Check with `gk --version`, then update: `git pull` and `make install` in the folder you cloned.
+
+**Folders listed under Skipped paths with "permission".** Give Full Disk Access to your terminal app, and to `~/bin/groundskeeper` for scheduled scans; see [Give it Full Disk Access](#give-it-full-disk-access). Run `gk doctor` to check.
+
+**A folder skipped with "timeout".** It took more than two minutes to measure, usually because it holds millions of small files. If it's inside a project, you can tell Groundskeeper to stop looking there with `excludePaths`; see [Configuration](#configuration). The notification mentions it on every scan where it happens.
+
+**"Photos access" warning, or the Mac Photos library can't be read.** Run Groundskeeper from Terminal, Ghostty or iTerm2, not from VS Code's built-in terminal. If you said no when macOS asked, allow your terminal app in **System Settings > Privacy & Security > Photos**.
+
+**The iPhone isn't found.** Use a cable that carries data (some only charge), unlock the phone and tap Trust if it asks. If it still fails, unplug it and plug it in again.
+
+**New photos don't show up.** The phone shares its photos as they were when you plugged it in. Unplug it, plug it in again, and run `gk iphone`.
+
+**No notification after a scheduled scan.** Allow notifications for Script Editor in **System Settings > Notifications**. If `gk doctor` says the last scheduled run was more than a week ago, look in `~/Library/Logs/groundskeeper.launchd.log`.
+
+**A warning that reports leave this Mac.** Your report folder is somewhere that syncs, such as iCloud Drive, Desktop or Documents. Set `outputDir` to a folder that doesn't sync; see [Configuration](#configuration).
+
+## Privacy and your data
+
+Groundskeeper is built to be safe to run with Full Disk Access:
+
+- **Nothing leaves your Mac.** It makes no network requests at all: no telemetry, no update checks. The only connection it makes is to an iPhone over the cable.
+- **It measures, it doesn't read.** It adds up file sizes. It never opens cookies, passwords, browsing history, messages, mail or other private files. The few files it does read are tool metadata, such as Ollama's model list and an app's `Info.plist`.
+- **No secrets in its output.** Reports, logs and saved scans hold folder paths, sizes, dates and IDs, never file contents or passwords.
+
+Run `gk help privacy` for the short version.
+
+### What it stores, and where
+
+| What | Where |
+|---|---|
+| Reports | `~/Reports/groundskeeper/` (or your `outputDir`) |
+| Saved scans, your photo review and the iPhone's history | `~/.local/state/groundskeeper/` |
+| Log | `~/Library/Logs/groundskeeper.log`, started afresh at 5 MB with the last three kept, plus `groundskeeper.launchd.log` from the schedule |
+| Settings | `~/.config/groundskeeper/config.json`, if you create it |
+
+All of these can be read only by your user. The reports list folder, project and app names, so treat them as private. Groundskeeper doesn't encrypt them itself; **FileVault** encrypts the whole disk, and `gk doctor` warns if it's off. Time Machine backs them up like any other files, so turn on backup encryption in Time Machine's settings too.
+
+Saved scans older than six months are deleted automatically. That's the only thing Groundskeeper ever deletes on its own.
+
+### Remove Groundskeeper
+
+In the folder you cloned:
+
+```sh
+make uninstall
+```
+
+This removes the program, `gk`, the photo helper, tab completion and the schedule. Your reports, saved scans, logs and settings stay. To remove those as well:
+
+```sh
+rm -rf ~/Reports/groundskeeper ~/.local/state/groundskeeper ~/.config/groundskeeper
+rm -f ~/Library/Logs/groundskeeper.log* ~/Library/Logs/groundskeeper.launchd.log
+```
+
+If you set `outputDir`, delete that folder instead of `~/Reports/groundskeeper`. Finally, remove Groundskeeper and your terminal from **Full Disk Access** in System Settings if you no longer need them there, and delete the cloned folder.
+
+## Configuration
+
+Settings live in `~/.config/groundskeeper/config.json`. The file is optional: anything you leave out uses its default. Paths can start with `~`. A full example with every default:
+
+```json
+{
+  "projectRoots": ["~/projects", "~/github", "~/code", "~/Developer"],
+  "staleDays": 90,
+  "minSizeMB": 100,
+  "outputDir": "~/Reports/groundskeeper",
+  "extraPaths": [],
+  "excludePaths": [],
+  "appUnusedDays": 120,
+  "appExclude": [],
+  "iphoneUnusedDays": 120,
+  "iphoneKeep": [],
+  "photosSource": "",
+  "photoWindowMinutes": 10,
+  "screenshotDays": 30,
+  "logLevel": "info"
+}
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `projectRoots` | `~/projects`, `~/github`, `~/code`, `~/Developer` | Folders searched for build artifacts and project-local AI models. |
+| `staleDays` | `90` | A project untouched this long has its build artifacts marked safe. Also how old a download must be to be listed. |
+| `minSizeMB` | `100` | Items smaller than this are left out of the report. |
+| `outputDir` | `~/Reports/groundskeeper` | Where reports are saved. Keep it out of synced folders. |
+| `extraPaths` | none | Reserved for extra folders to measure. Not used yet. |
+| `excludePaths` | none | Folders inside your project roots that the build-artifact search skips entirely. |
+| `appUnusedDays` | `120` | An app not opened for this long is listed as unused. |
+| `appExclude` | none | Bundle IDs of Mac apps never to list as unused, such as an installer or VPN you rarely open. |
+| `iphoneUnusedDays` | `120` | An iPhone app whose data hasn't changed for this long is listed as probably unused. |
+| `iphoneKeep` | none | Bundle IDs of iPhone apps never to suggest removing. |
+| `photosSource` | asked on first `gk iphone` | `device` (read and delete photos on the phone) or `mac-library` (in the Mac Photos library). Set it with `gk setup photos`. |
+| `photoWindowMinutes` | `10` | How close in time two photos must be to count as look-alikes. |
+| `screenshotDays` | `30` | Screenshots older than this are listed as old. |
+| `logLevel` | `info` | How much goes in the log: `debug`, `info`, `warn` or `error`. |
+
+For example, to report smaller items and keep a VPN app off the unused list:
+
+```json
+{
+  "minSizeMB": 50,
+  "appExclude": ["com.example.vpn-client"]
+}
+```
