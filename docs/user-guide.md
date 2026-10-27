@@ -169,3 +169,89 @@ Folders Groundskeeper couldn't measure, and why:
 ### Run details
 
 How long each part of the scan took, and how much it found. A part that was slow, timed out or failed is highlighted. You don't need this day to day, but it helps explain an incomplete report.
+
+## Cleaning up the Mac
+
+Groundskeeper suggests; you decide. There are two ways to act on the report.
+
+### Run a suggested command yourself
+
+For most items, copy the command next to it in the report and paste it into your terminal. For example, to clear npm's cache:
+
+```sh
+npm cache clean --force
+```
+
+Read the command before you run it. Items tagged **review** deserve a second look: `ollama rm` deletes a model you'd have to download again, and an `rm -rf` on a project's `node_modules` means running `npm install` before you work on it next. Commands that use `rm -rf` delete straight away; they don't use the Trash.
+
+### Clear browser caches
+
+Browser caches are the one kind of Mac cleanup Groundskeeper does for you, because doing it by hand risks deleting the wrong folder. First see what it would do:
+
+```sh
+gk clean browsers
+```
+
+```
+      5.0 MB  Brave · Cache                would move
+             ~/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache
+      2.0 MB  Brave · Cache                would move
+             ~/Library/Caches/BraveSoftware/Brave-Browser/Default/Code Cache
+Dry run: nothing was changed. Add --apply to move 7.0 MB to the Trash.
+```
+
+Nothing changes until you add `--apply`. Then it moves the caches to the Trash straight away, without asking again:
+
+```sh
+gk clean browsers --apply
+```
+
+Things to know:
+
+- **Quit the browser first.** A running browser is skipped, even in the dry run, because removing a cache it has open can corrupt it. The output says which browser to quit.
+- **Pick browsers** with `--browser`, for example `gk clean browsers --browser chrome,firefox`. Without it, every installed browser is included.
+- **Your browsing data is never touched:** cookies, logins, history, bookmarks and site data stay. The browser just downloads pages and images again as you visit them, so the first visits may be a little slower.
+- **Offline data,** such as cached web apps and Chrome's on-device AI model, is left alone unless you add `--include-offline`. Sites that work offline will need a connection the next time you open them.
+- If a folder can't be fully read (usually Safari's, without Full Disk Access), it's refused rather than partly moved.
+
+### Get the space back
+
+Moving something to the Trash doesn't free any space until you **empty the Trash** (Finder > Empty Trash). Until then you can undo it by dragging the folder out of the Trash back to where it was; the dry run's output shows the original location. The next report notes how much the clean commands moved to the Trash since the last one.
+
+Every clean is written to the log; see it with `gk logs --cmd clean`.
+
+## The schedule
+
+`make install` sets up a scheduled scan every **Monday and Thursday at 9:00**. If your Mac is asleep then, the scan runs when it wakes. It only ever runs the read-only scan, never a clean command.
+
+### The notification
+
+When a scheduled scan finishes, you get a notification like:
+
+> Rook's report is ready: 118.0 GB free, about 35.0 GB to tidy.
+
+Rook is Groundskeeper's raccoon mascot. "To tidy" is the reclaimable total from the report. If something went wrong, the notification adds a line such as "2 scanners had problems; see the report." That means part of the scan failed or timed out, so the report is incomplete; [Run details](#run-details) and `gk logs --run last --level warn` say why. "3 new paths couldn't be read" means folders were skipped this time that weren't before, often because Full Disk Access was removed.
+
+The notification is sent through macOS's Script Editor, so it shows Script Editor's icon. If you don't see any, check that **System Settings > Notifications > Script Editor** is allowed. Scans you start yourself don't notify unless you add `--notify`.
+
+### Run it now
+
+To run the scheduled scan immediately, exactly as the schedule runs it:
+
+```sh
+launchctl kickstart gui/$(id -u)/com.lot86.groundskeeper
+```
+
+`gk doctor` shows whether the schedule is loaded, when it runs next and when it last ran.
+
+### Change the days or time
+
+Edit `launchd/com.lot86.groundskeeper.plist` in the folder you cloned. Under `StartCalendarInterval`, each entry has a `Weekday` (1 is Monday, 0 or 7 is Sunday), an `Hour` and a `Minute`. Then run `make install` again to load the change. `gk help schedule` has the details.
+
+### Turn it off
+
+```sh
+launchctl bootout gui/$(id -u)/com.lot86.groundskeeper
+```
+
+This pauses the schedule until you next log in, restart or run `make install`, because macOS loads it again at login. To turn it off for good, remove Groundskeeper with `make uninstall`; see [Remove Groundskeeper](#remove-groundskeeper).
