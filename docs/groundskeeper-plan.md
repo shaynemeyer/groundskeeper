@@ -795,7 +795,7 @@ groundskeeper/
 
 - ~~Schedule~~: decided, Monday and Thursday at 9:00 AM (edit the plist and reinstall to change).
 - ~~Notification frequency~~: decided, every scheduled run; interactive runs only notify with `--notify`.
-- User guide: whether it needs screenshots, or text and sample output are enough. (Decided: it's written for everyone, not only the owner.)
+- ~~User guide~~: decided, written for everyone, with report screenshots from a made-up sample (`docsSample`) and Mermaid diagrams.
 - MCP: whether Claude Desktop is a supported client given that tool results leave the Mac, or only local clients such as Ollama are documented; and whether the SDK's size (it brings HTTP transports, `golang.org/x/oauth2` and `jwt` into the binary) is acceptable for a stdio-only server.
 - Mac cleanup: whether `review mac` should start with the safe rows ticked (the plan starts with nothing ticked), and whether 7 days is the right limit on the snapshot's age.
 - Whether to keep a rolling `latest.html` only, or a dated archive of every report (the plan currently does both).

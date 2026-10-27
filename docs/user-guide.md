@@ -2,6 +2,17 @@
 
 Groundskeeper (`groundskeeper`, or `gk` for short) finds disk space you can get back on your Mac, and on an iPhone plugged in over USB. Twice a week it scans and writes an HTML report. The report lists what's taking space and suggests a command for each item. It never deletes anything by itself: you decide what goes, and only `gk clean` commands remove anything.
 
+```mermaid
+flowchart LR
+  sched["Schedule<br>Mon and Thu 9:00"] --> scan
+  you["You run gk"] --> scan
+  scan["Scan<br>read-only"] --> report["HTML report<br>with a suggestion per item"]
+  scan --> notify["Notification"]
+  report --> decide{"You decide"}
+  decide -->|"paste a suggested command"| space["Space back"]
+  decide -->|"gk clean ... --apply"| space
+```
+
 This guide walks through using it, task by task. For every flag of a command, run `gk help <command>`.
 
 ## Install and first run
@@ -120,6 +131,10 @@ Running `gk` with nothing after it does the same as `gk scan`. To see the summar
 
 ## Reading the report
 
+![The top of a sample report: free space, disk used, the reclaimable total and the change since the last scan, then the items growing fastest and the Caches section with sizes, safety tags and suggested commands](assets/report-top.png)
+
+*A sample report. All the names, paths and sizes in this guide's screenshots are made up.*
+
 Each report is saved as `~/Reports/groundskeeper/<date>.html`, and `latest.html` in the same folder is always the newest one. Old reports aren't deleted for you; remove them from that folder whenever you like.
 
 ### The top of the report
@@ -167,6 +182,8 @@ Folders Groundskeeper couldn't measure, and why:
 - **timeout:** measuring the folder took more than two minutes, so it was skipped. This can happen with folders holding millions of files.
 
 ### Run details
+
+![Skipped paths listing one folder skipped for permission, and Run details showing each scanner's time, items found, paths skipped and status](assets/report-run.png)
 
 How long each part of the scan took, and how much it found. A part that was slow, timed out or failed is highlighted. You don't need this day to day, but it helps explain an incomplete report.
 
@@ -290,6 +307,8 @@ The answer is saved as `photosSource` in your config. To answer again, run `gk s
 
 The iPhone section lists free space and the 20 largest apps, with the size of each app and its data, and files that apps share with the Mac (such as books or videos you added through Finder). Sizes are what iOS reports over the cable, which can differ a little from **Settings > General > iPhone Storage**.
 
+![The iPhone section of a sample report: free space, the largest apps with app and data sizes, and a Probably unused table with a ready-made command to remove the app](assets/report-iphone.png)
+
 **Probably unused.** iOS doesn't tell a Mac when an app was last opened, so Groundskeeper guesses: an app whose data hasn't changed in size for 120 days is listed as probably unused. It needs a history to compare, so this list only appears after you've run `gk iphone` regularly (at least once a month) for 120 days. Apple's apps are never listed. To stop an app from ever being suggested, add its bundle ID to `iphoneKeep` in your config. Before removing one, check **Last Used** in iPhone Storage on the phone.
 
 ### Remove an app
@@ -318,7 +337,21 @@ Only apps from the last `gk iphone` can be removed, so run that first. Apple's a
 - **Old screenshots,** taken more than 30 days ago.
 - **The largest videos.**
 
+![The Photos part of a sample report: two duplicate groups, one of exact copies and one of look-alike photos, with the space each could free, the old screenshots and the largest videos](assets/report-photos.png)
+
 Groundskeeper only helps you delete duplicates. Delete screenshots and videos in the Photos app.
+
+Getting rid of duplicates takes three commands, and nothing is deleted until the last one:
+
+```mermaid
+flowchart TD
+  scan["gk iphone<br>finds duplicate groups"] --> review["gk review photos<br>accept, change or skip each group"]
+  review --> dry["gk clean photos<br>shows what would be deleted"]
+  dry --> apply["gk clean photos<br>--apply, you confirm"]
+  apply --> where{"iCloud Photos?"}
+  where -->|"on"| mac["Deleted in the Mac Photos library<br>Recently Deleted for 30 days"]
+  where -->|"off"| phone["Deleted on the iPhone over USB<br>gone for good"]
+```
 
 ### Which photo is kept
 

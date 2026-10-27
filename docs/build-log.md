@@ -32,12 +32,22 @@ Checking the guide's claims against the code before each commit found six that w
 
 - `make test` passes, `gofmt -l .` is clean, and `govulncheck` reports no vulnerabilities that affect the code.
 
+### Visuals
+
+- **Two Mermaid diagrams:** how Groundskeeper works (schedule or you, read-only scan, report and notification, you decide) at the top, and the duplicate-photo flow with its iCloud branch. Both were rendered with Mermaid 12.2.0 in headless Chrome to check they parse; "gk clean photos --apply" wrapped mid-flag, so the label breaks before `--apply`.
+- **Four report screenshots** in `docs/assets/`: the top with Growing fastest and Caches, the iPhone apps with Probably unused, Photos, and Skipped paths with Run details. They come from `docsSample` in `internal/report/docs_sample_test.go`, a made-up report (`/Users/you`, `com.example.*`, invented sizes) built on the existing test samples, with the escaping fixture's `<script>` file name replaced. To regenerate: `GK_DOCS_SAMPLE=<dir> go test ./internal/report -run TestWriteDocsSample -count=1`, screenshot `<dir>/report.html` with headless Chrome at `--force-device-scale-factor=2 --window-size=1100,3700`, crop with ImageMagick (`-crop 2200xH+0+Y +repage`), and strip metadata with `magick mogrify -strip -define png:exclude-chunk=date,time`. They show the dark theme, as this Mac was in dark mode.
+- `sips --cropOffset` was ignored and every crop came from the middle of the page, seen in the first crops (the "top" crop showed the iPhone table); ImageMagick's `-crop` with an explicit offset worked.
+- The PNGs were checked for EXIF, XMP and text chunks; `-strip` alone left a `tIME` chunk, which `png:exclude-chunk` removes.
+
+### Command Line Tools build, verified
+
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build -c release --package-path helpers/photos-helper --scratch-path <dir>` built `photos-helper` on a Mac that also has Xcode. The verbose build used only `CommandLineTools/SDKs/MacOSX27.0.sdk`, with no reference to `Xcode.app`; the binary runs and links Photos, ImageCaptureCore and Vision (`otool -L`). This was Command Line Tools 27 (Swift 6.4) on macOS 27, so the guide's minimum, macOS 26 with Swift 6.2, is still untested.
+
 ### Open
 
-- Whether the Xcode Command Line Tools alone can build `photos-helper` (the guide says so) hasn't been tried on a Mac without Xcode.
 - The notification's Script Editor icon and the setting to allow it come from the plan, not from a check on a fresh Mac.
-- No screenshots yet; the open decision in the plan stands.
-- The internal links are checked by hand, not by a test.
+- The internal links are checked by a script run by hand, not by a test.
+- There are no screenshots of the terminal screens (`gk doctor`, `gk review photos`); the guide shows their text instead.
 
 ## Step 14: logging and metrics tests
 
