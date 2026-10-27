@@ -49,12 +49,14 @@ func (d Downloads) Scan(ctx context.Context, home string) (Findings, error) {
 		if days < d.StaleDays {
 			continue
 		}
+		path := filepath.Join(dir, e.Name())
 		items = append(items, Item{
 			Section: "Downloads",
 			Label:   e.Name(),
-			Path:    filepath.Join(dir, e.Name()),
+			Path:    path,
 			Safety:  Review,
 			Note:    fmt.Sprintf("downloaded %d days ago", days),
+			Trash:   path,
 		})
 	}
 	skipped := measure(ctx, d.Size, items)

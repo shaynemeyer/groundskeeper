@@ -48,7 +48,7 @@ func (c Caches) Scan(ctx context.Context, home string) (Findings, error) {
 		if hint == "" {
 			hint = "rm -rf " + ShellQuote(path)
 		}
-		items = append(items, Item{Section: "Caches", Label: k.label, Path: path, Safety: Safe, Hint: hint})
+		items = append(items, Item{Section: "Caches", Label: k.label, Path: path, Safety: Safe, Hint: hint, Trash: path})
 	}
 	others, err := otherLibraryCaches(home)
 	if err != nil {
@@ -79,11 +79,11 @@ func otherLibraryCaches(home string) ([]Item, error) {
 			for _, child := range readDirs(path) {
 				sub := filepath.Join(path, child)
 				if !slices.Contains(browsers, sub) && !holdsBrowser(sub, browsers) {
-					items = append(items, Item{Section: "Caches", Label: e.Name() + "/" + child, Path: sub, Safety: Safe})
+					items = append(items, Item{Section: "Caches", Label: e.Name() + "/" + child, Path: sub, Safety: Safe, Trash: sub})
 				}
 			}
 		default:
-			items = append(items, Item{Section: "Caches", Label: e.Name(), Path: path, Safety: Safe})
+			items = append(items, Item{Section: "Caches", Label: e.Name(), Path: path, Safety: Safe, Trash: path})
 		}
 	}
 	return items, nil

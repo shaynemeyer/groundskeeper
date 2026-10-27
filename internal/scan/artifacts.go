@@ -170,6 +170,7 @@ func (a Artifacts) item(art artifact, bytes int64, act activity) (Item, bool) {
 		Safety:  Review,
 		Hint:    "rm -rf " + ShellQuote(art.path),
 		Note:    act.note(),
+		Trash:   art.path,
 	}
 	if act.days < 0 || act.days >= a.StaleDays {
 		it.Safety = Safe

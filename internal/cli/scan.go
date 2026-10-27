@@ -302,7 +302,10 @@ func snapshotOf(rep report.Report) history.Snapshot {
 	}
 	for _, sec := range rep.Sections {
 		for _, it := range sec.Items {
-			s.Items = append(s.Items, history.Item{Section: it.Section, Label: it.Label, Path: it.Path, Bytes: it.Bytes})
+			s.Items = append(s.Items, history.Item{
+				Section: it.Section, Label: it.Label, Path: it.Path, Bytes: it.Bytes,
+				Safety: it.Safety, Note: it.Note, Trash: it.Trash,
+			})
 		}
 	}
 	return s

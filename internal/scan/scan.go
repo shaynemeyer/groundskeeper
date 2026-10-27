@@ -27,6 +27,7 @@ type Item struct {
 	Safety  string
 	Hint    string
 	Note    string
+	Trash   string // set only when moving this one path to the Trash is the whole cleanup
 }
 
 // Findings is what a scanner returns.

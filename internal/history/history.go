@@ -29,6 +29,9 @@ type Item struct {
 	Label   string `json:"label"`
 	Path    string `json:"path,omitempty"`
 	Bytes   int64  `json:"bytes"`
+	Safety  string `json:"safety,omitempty"`
+	Note    string `json:"note,omitempty"`
+	Trash   string `json:"trash,omitempty"` // the path clean mac may move to the Trash
 }
 
 // Key identifies the same row across runs.

@@ -300,6 +300,20 @@ func TestSnapshotRecordsScannerMetrics(t *testing.T) {
 	}
 }
 
+func TestSnapshotRecordsTrashAndSafety(t *testing.T) {
+	home := fakeHome(t)
+	run(t, "scan")
+
+	items := readSnapshots(t, home)[0].Items
+	i := slices.IndexFunc(items, func(it history.Item) bool { return it.Label == "npm" })
+	if i < 0 {
+		t.Fatalf("no npm row in %+v", items)
+	}
+	if items[i].Trash != filepath.Join(home, ".npm") || items[i].Safety != "safe" {
+		t.Errorf("npm row = %+v", items[i])
+	}
+}
+
 func TestSnapshotRecordsSkippedPaths(t *testing.T) {
 	home := fakeHome(t)
 	locked := filepath.Join(home, ".npm/locked")

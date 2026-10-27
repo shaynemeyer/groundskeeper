@@ -2,6 +2,25 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 15: Mac cleanup (in progress)
+
+### Built
+
+- **Increment 1:** `scan.Item.Trash` is the one path whose move to the Trash is the whole cleanup for a row. The Caches scanner sets it on known caches and the other `~/Library/Caches` folders, Build artifacts on each artifact folder (not the `__pycache__` totals), Downloads on each entry, and AI models on Hugging Face `models--*` and `datasets--*` repos and LM Studio model folders. Ollama, ComfyUI, Toolchains, Containers, Unused apps and Browsers never set it. Snapshot rows (`history.Item`) now store `trash`, `safety` and `note`, so `review mac` can show them from the last snapshot.
+
+### Decisions
+
+- **Hugging Face repos that link into the shared `<hub>/blobs` store get no `Trash`.** Their size counts the shared files they symlink to (step 3), and trashing the repo folder removes only the links, so it wouldn't free what the row reports. `TestTrashModels` covers it, and fails when the check is removed. The plan's table and allowlist now say so.
+- **Both LM Studio locations are trashable,** `~/.lmstudio/models` and the older `~/.cache/lm-studio/models`, since the scanner lists both. The plan's allowlist now names both.
+
+### Verified
+
+- `go test -race ./...` passes. New tests: `internal/scan/trash_test.go` (which rows get `Trash` and which never do) and `TestSnapshotRecordsTrashAndSafety` (a scan's snapshot keeps the npm row's `trash` and `safety`).
+
+### Open
+
+- Increments 2 to 5: the allowlist and checks in `internal/clean` with `mac-review.json`, `clean mac`, `review mac`, and the security tests.
+
 ## Step 17: user guide
 
 ### Built
