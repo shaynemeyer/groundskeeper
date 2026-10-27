@@ -255,3 +255,121 @@ launchctl bootout gui/$(id -u)/com.lot86.groundskeeper
 ```
 
 This pauses the schedule until you next log in, restart or run `make install`, because macOS loads it again at login. To turn it off for good, remove Groundskeeper with `make uninstall`; see [Remove Groundskeeper](#remove-groundskeeper).
+
+## The iPhone
+
+Plug your iPhone into the Mac with a cable, then run:
+
+```sh
+gk iphone
+```
+
+The first time, the iPhone asks whether to trust this Mac: unlock it and tap **Trust**. Groundskeeper reads the phone over the cable only; nothing goes over the network, and nothing on the phone is changed. It then reads your photos (see [Duplicate photos](#duplicate-photos)), scans the Mac as `gk scan` does, and writes the report with an **iPhone** section. Reading photos can take a few minutes.
+
+If it can't reach the phone, it says what to do: connect the cable, unlock the phone and tap Trust, or unplug it and plug it in again.
+
+### Where your photos are read from
+
+The first `gk iphone` asks one question:
+
+```
+Is iCloud Photos turned on for this iPhone?
+  > Yes — clean duplicates in this Mac's Photos library (changes sync to the phone)
+    No  — clean duplicates on the phone directly over USB
+    Not sure — show me how to check
+```
+
+To check, open **Settings > your name > iCloud > Photos** on the iPhone: if **Sync this iPhone** is on, iCloud Photos is on. The answer decides where duplicates are found and deleted:
+
+- **Yes:** in the Photos library on this Mac. Deletes there sync to the phone, and deleted photos stay in **Recently Deleted** for 30 days. This only works if Photos on this Mac also uses iCloud Photos, with the same Apple Account.
+- **No:** on the phone itself, over the cable. Keep the phone unlocked while `gk iphone` reads the photos. Deletes are **permanent**: they don't go to the phone's Recently Deleted.
+
+The answer is saved as `photosSource` in your config. To answer again, run `gk setup photos`.
+
+### Apps
+
+The iPhone section lists free space and the 20 largest apps, with the size of each app and its data, and files that apps share with the Mac (such as books or videos you added through Finder). Sizes are what iOS reports over the cable, which can differ a little from **Settings > General > iPhone Storage**.
+
+**Probably unused.** iOS doesn't tell a Mac when an app was last opened, so Groundskeeper guesses: an app whose data hasn't changed in size for 120 days is listed as probably unused. It needs a history to compare, so this list only appears after you've run `gk iphone` regularly (at least once a month) for 120 days. Apple's apps are never listed. To stop an app from ever being suggested, add its bundle ID to `iphoneKeep` in your config. Before removing one, check **Last Used** in iPhone Storage on the phone.
+
+### Remove an app
+
+Each app in the report shows its bundle ID, such as `com.example.game`, and apps listed as probably unused come with a ready-made command. First see what it would free:
+
+```sh
+gk clean iphone-apps com.example.game
+```
+
+Then remove it. You're asked before each app, and the phone shows no prompt of its own:
+
+```sh
+gk clean iphone-apps com.example.game --apply
+```
+
+**Removing an app deletes its data for good.** If you want to keep the data (game progress, documents) and only free the app's own size, **offload** it instead on the phone: **Settings > General > iPhone Storage**, tap the app, then **Offload App**.
+
+Only apps from the last `gk iphone` can be removed, so run that first. Apple's apps and anything in `iphoneKeep` are always refused. Press Tab after `gk clean iphone-apps` to complete bundle IDs.
+
+## Duplicate photos
+
+`gk iphone` also looks through your photos and lists in the report:
+
+- **Duplicates,** in groups. **Exact copies** are the same file twice. **Look alike** photos were taken within 10 minutes of each other (or in one burst) and look nearly the same, such as several shots of the same scene.
+- **Old screenshots,** taken more than 30 days ago.
+- **The largest videos.**
+
+Groundskeeper only helps you delete duplicates. Delete screenshots and videos in the Photos app.
+
+### Which photo is kept
+
+In each group, the best shot is marked **Keep** and the others **Extra**. The best shot is the one Apple's image analysis scores as most pleasing. **Favorites, edited photos and photos in albums are always kept**, and every group keeps at least one photo. You can change any of this in the review.
+
+### Review the duplicates
+
+```sh
+gk review photos
+```
+
+This steps through the groups one at a time. Nothing is deleted here; your choices are saved for `gk clean photos`.
+
+| Key | What it does |
+|---|---|
+| arrow keys | Choose a photo in the group |
+| k | Switch the chosen photo between Keep and Extra |
+| space | Look at the photos |
+| enter | Accept the group: its extras will be deleted |
+| s | Skip the group: nothing in it will be deleted |
+| p | Go back to the previous group |
+| q | Save your choices so far and quit |
+| ctrl+c | Quit without saving anything |
+
+In the [Ghostty](https://ghostty.org) terminal the photos are shown right in the screen. In other terminals, press space to open them in Quick Look. The previews are copied into a private temporary folder that's removed when the review ends.
+
+A new review replaces the previous one. Your choices are saved in `~/.local/state/groundskeeper/photo-review.json`.
+
+### Delete the extras
+
+First see what would be deleted:
+
+```sh
+gk clean photos
+```
+
+Then delete:
+
+```sh
+gk clean photos --apply
+```
+
+How it confirms depends on where your photos are:
+
+- **iPhone (iCloud Photos off):** deleting is **permanent**. You're asked to type the number of photos to confirm.
+- **Mac Photos library (iCloud Photos on):** you answer `y`, then macOS asks once more. Deleted photos stay in **Recently Deleted** for 30 days.
+
+A photo that changed since `gk iphone` read it, or is no longer there, is left alone and listed with the reason. Photos that weren't deleted stay in the saved review, so you can try again.
+
+**Try it on throwaway photos first.** Take a few near-identical shots of anything, run `gk iphone`, and in `gk review photos` accept only that group and skip the rest (s). Then run `gk clean photos --apply` and check the result on the phone. Unplug and plug the phone back in before `gk iphone` so it sees the new shots: the phone sends its photos as they were when it was connected.
+
+### Photos on the Mac need permission
+
+Reading the Mac Photos library needs Photos access for your terminal app; macOS asks the first time. Some terminals can't get it at all, notably the one built into VS Code, which macOS refuses without asking. Use Terminal, Ghostty or iTerm2 for anything involving the Mac library. `gk doctor` shows whether access is granted.
