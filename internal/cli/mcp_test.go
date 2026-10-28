@@ -244,6 +244,12 @@ func TestMCPServesScanAndWritesOnlyTheLog(t *testing.T) {
 	if !bytes.Contains(log, []byte(`"cmd":"mcp"`)) || bytes.Contains(log, []byte(marker)) {
 		t.Errorf("log lacks cmd mcp or holds the marker:\n%s", log)
 	}
+	scanCall := func(line []byte) bool {
+		return bytes.Contains(line, []byte(`"msg":"mcp tool call"`)) && bytes.Contains(line, []byte(`"tool":"scan"`))
+	}
+	if !slices.ContainsFunc(bytes.Split(log, []byte("\n")), scanCall) {
+		t.Errorf("log has no line for the scan call:\n%s", log)
+	}
 }
 
 func TestMCPScanStopsAtBudget(t *testing.T) {

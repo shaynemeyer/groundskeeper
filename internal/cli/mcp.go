@@ -80,7 +80,7 @@ func runMCP(cmd *cobra.Command, global *globalOptions) error {
 	defer closeLog.Close()
 	log.Info("mcp started")
 	scanFn := func(ctx context.Context) (report.Report, error) { return mcpScan(ctx, log, home, cfg) }
-	opts := mcp.Options{Version: cmd.Root().Version, Home: home, StateDir: history.Dir(home), Scan: scanFn}
+	opts := mcp.Options{Version: cmd.Root().Version, Home: home, StateDir: history.Dir(home), Scan: scanFn, Log: log}
 	err = mcp.Serve(cmd.Context(), opts, cmd.InOrStdin(), cmd.OutOrStdout())
 	log.Info("mcp stopped")
 	return err
