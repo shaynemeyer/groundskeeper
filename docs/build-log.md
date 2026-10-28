@@ -2,6 +2,27 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Fix: an interrupted scan saved a partial snapshot
+
+### Problem
+
+- An `ollmcp` `stats` call took minutes to answer. Groundskeeper answered in 12 ms (`mcp tool call`, `outcome: ok`), but the result was 70 KB of text, because the newest snapshot listed 1,018 skipped paths. Every other recent scan had 16 or fewer.
+- That snapshot (an interactive `scan`) ran for 5.7 s, yet every one of its 1,018 skips was a timeout, which takes 2 minutes per folder. Caches ran normally for 4.1 s; every later scanner finished in 0 to 18 ms with all its folders as timeouts. It still saved the snapshot, wrote the report and logged `run finished`.
+- **Cause, reproduced:** Ctrl-C cancels the command's context (`fang.WithNotifySignal(os.Interrupt)`), and `size.Measure` then records each folder not yet measured as `timeout`. `runScan` didn't check, so it carried on as if the scan had finished. `scan --dry` given SIGINT after 3 s logged exactly 1,018 timeout skips with the same counts per scanner (774 Build artifacts, 181 Downloads, 22 AI models), printed a normal summary and exited 0.
+
+### Fix
+
+- `runScan` checks the context after the scanners. If it was cancelled, it logs `run interrupted` and returns `scan interrupted; no report or snapshot saved`, before the snapshot, report or notification.
+
+### Verified
+
+- `TestInterruptedScanSavesNothing` runs `scan` with a cancelled context and wants the error, no snapshot and no report. It failed all three ways before the fix and passes after it. The SIGINT reproduction now exits 1 with `Scan interrupted; no report or snapshot saved.` and no summary. `make test` passes.
+
+### Open
+
+- The partial snapshot from before the fix is still the newest in the state folder; removing it is up to the user.
+- `stats` and `scan` return every skipped path; a cap is next.
+
 ## Step 16 follow-up: a log line per MCP tool call
 
 ### Built

@@ -616,3 +616,27 @@ func TestBadConfigFails(t *testing.T) {
 		t.Fatal("want error for invalid config")
 	}
 }
+
+// TestInterruptedScanSavesNothing: Ctrl-C cancels the command's context,
+// and every folder not yet measured then counts as a timeout. That's not a
+// scan to keep.
+func TestInterruptedScanSavesNothing(t *testing.T) {
+	home := fakeHome(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out bytes.Buffer
+	root := NewRoot()
+	root.SetArgs([]string{"scan"})
+	root.SetOut(&out)
+	root.SetErr(&out)
+	err := root.ExecuteContext(ctx)
+	if err == nil || !strings.Contains(err.Error(), "interrupted") {
+		t.Errorf("err = %v, want the scan reported as interrupted", err)
+	}
+	if n := len(readSnapshots(t, home)); n != 0 {
+		t.Errorf("saved %d snapshots, want none", n)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Reports/groundskeeper/latest.html")); err == nil {
+		t.Error("wrote a report")
+	}
+}
