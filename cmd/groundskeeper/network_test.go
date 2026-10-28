@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,5 +88,48 @@ func TestScanMakesNoConnections(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "Reports/groundskeeper/latest.html")); err != nil {
 		t.Fatalf("scan wrote no report: %v", err)
+	}
+	mcpSandboxed(t, bin, home)
+}
+
+// mcpRequests initialize a session, list the tools and call scan.
+var mcpRequests = []string{
+	`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`,
+	`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+	`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+	`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"scan","arguments":{}}}`,
+}
+
+// mcpSandboxed runs gk mcp under noNetwork, sends mcpRequests, waits for the
+// scan's answer, then disconnects. Any connection attempt kills it.
+func mcpSandboxed(t *testing.T, bin, home string) {
+	t.Helper()
+	cmd := exec.Command("/usr/bin/sandbox-exec", "-p", noNetwork, bin, "mcp")
+	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	stdin.Write([]byte(strings.Join(mcpRequests, "\n") + "\n"))
+	lines := bufio.NewScanner(stdout)
+	lines.Buffer(nil, 4<<20)
+	answered := false
+	for !answered && lines.Scan() {
+		answered = strings.HasPrefix(lines.Text(), `{"jsonrpc":"2.0","id":3,"result":`)
+	}
+	stdin.Close()
+	err = cmd.Wait()
+	if !answered {
+		t.Fatalf("gk mcp never answered scan under the sandbox: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("gk mcp under the sandbox: %v; it tried to connect", err)
 	}
 }
