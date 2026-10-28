@@ -182,11 +182,16 @@ func TestEachToolCallLogsOneLine(t *testing.T) {
 		{"scan", nil, &fs.PathError{Op: "open", Path: home + "/secret", Err: fs.ErrPermission}, []string{"level=WARN", "tool=scan", "outcome=failed"}},
 		{"history", nil, nil, []string{"level=INFO", "tool=history", "outcome=ok"}},
 		{"stats", map[string]any{"runs": 0}, nil, []string{"level=WARN", "tool=stats", "outcome=rejected"}},
+		// llama3.2 sent the run count as a string; the SDK refuses it
+		// before the tool runs.
+		{"stats", map[string]any{"runs": "20"}, nil, []string{"level=WARN", "tool=stats", "outcome=invalid"}},
+		{"rm -rf ~", nil, nil, []string{"level=WARN", "tool=unknown", "outcome=invalid"}},
 	}
 	for _, c := range calls {
 		scanErr = c.scanErr
 		buf.Reset()
-		if _, err := session.CallTool(ctx, &sdk.CallToolParams{Name: c.tool, Arguments: c.args}); err != nil {
+		// An unknown tool is a protocol error, not a tool result.
+		if _, err := session.CallTool(ctx, &sdk.CallToolParams{Name: c.tool, Arguments: c.args}); err != nil && c.tool != "rm -rf ~" {
 			t.Fatal(err)
 		}
 		lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -194,8 +199,8 @@ func TestEachToolCallLogsOneLine(t *testing.T) {
 		if len(lines) != 1 || slices.ContainsFunc(want, func(w string) bool { return !strings.Contains(lines[0], w) }) {
 			t.Errorf("%s %v logged %q, want one line with %q", c.tool, c.args, lines, want)
 		}
-		if strings.Contains(buf.String(), home) {
-			t.Errorf("%s logged the home folder: %s", c.tool, buf.String())
+		if strings.Contains(buf.String(), home) || strings.Contains(buf.String(), "rm -rf") {
+			t.Errorf("%s logged the home folder or the tool name it was sent: %s", c.tool, buf.String())
 		}
 	}
 }

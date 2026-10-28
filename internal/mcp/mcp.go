@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -51,9 +50,10 @@ func (nopWriteCloser) Close() error { return nil }
 // NewServer returns a server with the scan, history and stats tools.
 func NewServer(opts Options) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "groundskeeper", Version: opts.Version}, nil)
+	s.AddReceivingMiddleware(logCalls(opts.Log))
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
 	sdk.AddTool(s, &sdk.Tool{Name: "scan", Description: scanDescription, Annotations: readOnly},
-		logged(opts.Log, "scan", func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, ScanResult, error) {
+		recorded(func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, ScanResult, error) {
 			rep, err := opts.Scan(ctx)
 			if errors.Is(err, ErrBusy) {
 				return nil, ScanResult{}, err
@@ -64,38 +64,12 @@ func NewServer(opts Options) *sdk.Server {
 			return nil, resultOf(rep, opts.Home), nil
 		}))
 	sdk.AddTool(s, &sdk.Tool{Name: "history", Description: historyDescription, Annotations: readOnly},
-		logged(opts.Log, "history", func(_ context.Context, _ *sdk.CallToolRequest, in RunsInput) (*sdk.CallToolResult, HistoryResult, error) {
+		recorded(func(_ context.Context, _ *sdk.CallToolRequest, in RunsInput) (*sdk.CallToolResult, HistoryResult, error) {
 			return historyOf(opts, in)
 		}))
 	sdk.AddTool(s, &sdk.Tool{Name: "stats", Description: statsDescription, Annotations: readOnly},
-		logged(opts.Log, "stats", func(_ context.Context, _ *sdk.CallToolRequest, in RunsInput) (*sdk.CallToolResult, StatsResult, error) {
+		recorded(func(_ context.Context, _ *sdk.CallToolRequest, in RunsInput) (*sdk.CallToolResult, StatsResult, error) {
 			return statsOf(opts, in)
 		}))
 	return s
-}
-
-// logged logs one line per call of the tool h: its name, how long it took
-// and the outcome, ok, busy, rejected or failed. Error messages aren't
-// logged; gk mcp logs a failed scan's kind itself.
-func logged[In, Out any](log *logging.Logger, name string, h sdk.ToolHandlerFor[In, Out]) sdk.ToolHandlerFor[In, Out] {
-	return func(ctx context.Context, req *sdk.CallToolRequest, in In) (*sdk.CallToolResult, Out, error) {
-		start := time.Now()
-		res, out, err := h(ctx, req, in)
-		outcome := "ok"
-		switch {
-		case errors.Is(err, ErrBusy):
-			outcome = "busy"
-		case errors.Is(err, errRuns):
-			outcome = "rejected"
-		case err != nil:
-			outcome = "failed"
-		}
-		fields := []logging.Field{logging.ID("tool", name), logging.Duration(time.Since(start)), logging.ID("outcome", outcome)}
-		if err != nil {
-			log.Warn("mcp tool call", fields...)
-		} else {
-			log.Info("mcp tool call", fields...)
-		}
-		return res, out, err
-	}
 }
