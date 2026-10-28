@@ -31,9 +31,15 @@ func newMCPCmd(global *globalOptions) *cobra.Command {
 		Short:   "Serve read-only results to an MCP client over stdio",
 		Long: `Lets an AI assistant answer "what's using my disk?". An MCP client such as
 Claude Desktop, or ollmcp with a local Ollama model, starts gk mcp and talks to
-it on stdin and stdout. It offers one tool, scan, which runs a scan like
-gk scan --dry and returns each item's path, size, safety tag and suggested
-command. A scan stops after 45 seconds and lists what it didn't measure.
+it on stdin and stdout. It offers three tools:
+
+  scan     runs a scan like gk scan --dry and returns each item's path, size,
+           safety tag and suggested command. It stops after 45 seconds and
+           lists what it didn't measure.
+  history  free space over recent scans and what grew most, like gk history
+  stats    how recent scans went, like gk stats --json
+
+history and stats take a run count from 1 to 50 and read the saved scans.
 
 Privacy: Groundskeeper sends nothing anywhere, but the client passes results
 to its model. With Claude Desktop they go to Anthropic: paths that name your
@@ -47,7 +53,7 @@ schedule uses. The client app's access doesn't apply.
 Safety: read-only. It writes no report, snapshot or file other than the log,
 and offers no clean commands.
 
-See also: gk help privacy, gk scan`,
+See also: gk help privacy, gk scan, gk history, gk stats`,
 		Example: `  # Clients start it themselves; this is the command they run.
   # In Claude Desktop's claude_desktop_config.json, use the full path:
   #   "groundskeeper": {"command": "<full path of ~/bin/groundskeeper>", "args": ["mcp"]}
@@ -74,7 +80,8 @@ func runMCP(cmd *cobra.Command, global *globalOptions) error {
 	defer closeLog.Close()
 	log.Info("mcp started")
 	scanFn := func(ctx context.Context) (report.Report, error) { return mcpScan(ctx, log, home, cfg) }
-	err = mcp.Serve(cmd.Context(), cmd.Root().Version, home, scanFn, cmd.InOrStdin(), cmd.OutOrStdout())
+	opts := mcp.Options{Version: cmd.Root().Version, Home: home, StateDir: history.Dir(home), Scan: scanFn}
+	err = mcp.Serve(cmd.Context(), opts, cmd.InOrStdin(), cmd.OutOrStdout())
 	log.Info("mcp stopped")
 	return err
 }

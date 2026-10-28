@@ -21,6 +21,14 @@ type Scan func(ctx context.Context) (report.Report, error)
 // reaches the client as is.
 var ErrBusy = errors.New("another scan is already running; try again in a minute")
 
+// Options are what the server needs.
+type Options struct {
+	Version  string
+	Home     string // written as ~ in every result
+	StateDir string // where the snapshots are
+	Scan     Scan
+}
+
 const scanDescription = `Scan this Mac for disk space that can be reclaimed: caches, AI models, ` +
 	`stale build artifacts, toolchains, containers, old downloads, browser caches and unused apps. ` +
 	`Returns free and total disk space, the reclaimable total, and each item with its size in bytes, ` +
@@ -29,32 +37,37 @@ const scanDescription = `Scan this Mac for disk space that can be reclaimed: cac
 
 // Serve runs the server on in and out, usually stdin and stdout, until the
 // client disconnects. out carries only protocol messages.
-func Serve(ctx context.Context, version, home string, scan Scan, in io.Reader, out io.Writer) error {
+func Serve(ctx context.Context, opts Options, in io.Reader, out io.Writer) error {
 	t := &sdk.IOTransport{Reader: io.NopCloser(in), Writer: nopWriteCloser{out}}
-	return NewServer(version, home, scan).Run(ctx, t)
+	return NewServer(opts).Run(ctx, t)
 }
 
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
 
-// NewServer returns a server with the scan tool. home is written as ~ in
-// every result.
-func NewServer(version, home string, scan Scan) *sdk.Server {
-	s := sdk.NewServer(&sdk.Implementation{Name: "groundskeeper", Version: version}, nil)
-	sdk.AddTool(s, &sdk.Tool{
-		Name:        "scan",
-		Description: scanDescription,
-		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, ScanResult, error) {
-		rep, err := scan(ctx)
-		if errors.Is(err, ErrBusy) {
-			return nil, ScanResult{}, err
-		}
-		if err != nil {
-			return nil, ScanResult{}, fmt.Errorf("scan failed: %s", logging.KindOf(err))
-		}
-		return nil, resultOf(rep, home), nil
-	})
+// NewServer returns a server with the scan, history and stats tools.
+func NewServer(opts Options) *sdk.Server {
+	s := sdk.NewServer(&sdk.Implementation{Name: "groundskeeper", Version: opts.Version}, nil)
+	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
+	sdk.AddTool(s, &sdk.Tool{Name: "scan", Description: scanDescription, Annotations: readOnly},
+		func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, ScanResult, error) {
+			rep, err := opts.Scan(ctx)
+			if errors.Is(err, ErrBusy) {
+				return nil, ScanResult{}, err
+			}
+			if err != nil {
+				return nil, ScanResult{}, fmt.Errorf("scan failed: %s", logging.KindOf(err))
+			}
+			return nil, resultOf(rep, opts.Home), nil
+		})
+	sdk.AddTool(s, &sdk.Tool{Name: "history", Description: historyDescription, Annotations: readOnly},
+		func(_ context.Context, _ *sdk.CallToolRequest, in RunsInput) (*sdk.CallToolResult, HistoryResult, error) {
+			return historyOf(opts, in)
+		})
+	sdk.AddTool(s, &sdk.Tool{Name: "stats", Description: statsDescription, Annotations: readOnly},
+		func(_ context.Context, _ *sdk.CallToolRequest, in RunsInput) (*sdk.CallToolResult, StatsResult, error) {
+			return statsOf(opts, in)
+		})
 	return s
 }
