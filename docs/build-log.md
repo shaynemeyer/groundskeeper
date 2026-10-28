@@ -2,6 +2,42 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 16: MCP spike
+
+### Built
+
+- **A throwaway MCP server and client** with the official Go SDK, `github.com/modelcontextprotocol/go-sdk` v1.8.0 (the latest release). The server ran the real scanners in-process and offered `scan` (every item, or the largest `top` per section, with paths and hints under the home folder written as `~`) and `wait` (sleeps a given number of seconds, to find a client's timeout). It logged each call, its timing, the `doctor` Full Disk Access probe (`~/Library/Safari`) and skip counts to a file outside the repo, since stdout carries the protocol. The client, built on `mcp.CommandTransport`, listed the tools and called each one. Both were committed on the step 16 branch and deleted afterwards, with the SDK dropped from `go.mod` until step 16 (2).
+- **Clients:** Claude Desktop (an `mcpServers` entry in `claude_desktop_config.json`, restored from a backup afterwards) and `ollmcp` from `mcp-client-for-ollama`, run with `uvx` and a separate servers file.
+
+### Decisions
+
+- **No real scan results went to Anthropic during the spike.** Claude Desktop's server offered only `wait` and ran one scan in the background at startup that logged only the access probe and skip counts. The full `scan` ran only through Ollama, where nothing leaves the Mac. Even without contents, a result names Downloads files (the row label is the file name), projects and apps.
+- **`scan` gets a 45-second budget** (question 2), returning what it measured with the rest listed as `timeout`, rather than progress notifications. The MCP spec lets clients reset their timeout on progress ([lifecycle: timeouts](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#timeouts)), but whether Claude Desktop does wasn't tested; the budget works with any client.
+- **`scan` returns every item** (question 3); the result is small enough.
+- **"One scan at a time" uses a lock file,** because Claude Desktop runs two server processes.
+- The plan's MCP section has the new rules: hints rewritten as `~/'...'`, the budget, the lock across processes, and the binary's own Full Disk Access.
+
+### Problems found
+
+- **Question 1: Claude Desktop's servers don't get Claude.app's Full Disk Access.** With Claude.app granted and restarted, both servers logged `fda=missing` and 24 paths skipped for permission. The process chain was `Claude` > `Claude.app/Contents/Helpers/disclaimer` > server, and `nm -u` on `disclaimer` lists `_responsibility_spawnattrs_setdisclaim`, so macOS checks the server binary as its own responsible process. Proven by the grants: with the server binary granted too, `fda=granted` and no skips; with Claude.app's grant then turned off and only the binary's on, still `fda=granted` and no skips. So `gk mcp` uses the same `~/bin/groundskeeper` grant as the schedule.
+- **Question 2: Claude Desktop fails a tool call at 60 seconds and doesn't cancel it.** `wait 30` returned normally; `wait 90` showed Failed, citing the bridge's 60-second limit, while the server log shows the wait ran the full 90 seconds and answered after the client had gone. Scans under Claude Desktop took 10 to 15 seconds with Full Disk Access, but the size engine allows 2 minutes per folder.
+- **Question 3: local models cope.** Through `ollmcp`, `qwen3.8:27b` called `scan` with `top` 10 on its own (10.4 s, 32 items, 6.3 KB) and `llama3.2` called it with no arguments (6.0 s, 36 items, 6.8 KB). The user checked both answers against the data and found them right.
+- **Claude Desktop starts two server processes per launch.** Every restart logged two `start` lines about 0.2 s apart with different parents, and two scans finishing in the same second.
+- **Hints carry absolute paths.** Rewriting only `Path` as `~` left the user name in hints such as `rm -rf '/Users/...'` (`internal/scan/artifacts.go:171`). Replacing the home folder inside a quoted hint gives `'~/...'`, which the shell doesn't expand, so the real tool must write `~/'...'`.
+- **Claude Desktop's own timeout message names the Mac** (its local host name). It comes from Claude Desktop, not from the tool, but it's one more thing that leaves the Mac with that client.
+
+### Verified
+
+- The spike client against the spike server from the Claude Code shell (no Full Disk Access): both tools listed with `readOnlyHint: true`; `scan` took about 6 s and returned 7.2 KB, 32 items, 26 paths skipped for permission; no result held the home path after hints were rewritten. With `wait` only offered, calling `scan` failed with `unknown tool "scan"`.
+- Each question was answered from the server's log, as above.
+
+### Open
+
+- One background scan logged 22 minutes and two timeouts across a night. The guess is that the Mac slept mid-scan; it wasn't proven.
+- Whether Claude Desktop resets its timeout on progress notifications.
+- `ollmcp` was run from Ghostty, which has Full Disk Access itself, so the run doesn't show which grant applies to its servers.
+- The plan's open decision on Claude Desktop as a supported client, and the SDK's size.
+
 ## Step 15: Mac cleanup
 
 ### Built
