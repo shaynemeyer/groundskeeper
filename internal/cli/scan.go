@@ -3,6 +3,7 @@ package cli
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -157,6 +158,12 @@ func runScan(cmd *cobra.Command, global *globalOptions, opts *scanOptions) error
 	measurer := size.New(folderTimeout, sizeWorkers)
 	rep := report.Report{Generated: start, Disk: disk}
 	rep.Sections, rep.Skipped, rep.Run.Scanners = runScanners(ctx, log, newScanners(home, cfg, measurer), home, spin)
+	// Once ctx is cancelled (Ctrl-C), every folder not yet measured is
+	// recorded as a timeout, so the result is too partial to save.
+	if ctx.Err() != nil {
+		log.Warn("run interrupted", logging.ErrKind(ctx.Err()))
+		return errors.New("scan interrupted; no report or snapshot saved")
+	}
 	if phone != nil {
 		rep.IPhone = phone
 		rep.Run.Scanners = append(phoneStats, rep.Run.Scanners...)
