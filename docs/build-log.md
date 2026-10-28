@@ -2,6 +2,21 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Fix: tool calls the SDK refuses are logged too
+
+### Problem
+
+- In `ollmcp`, `llama3.2` called `stats` with `"runs": "20"`, a string. The SDK checks arguments against the tool's input schema before calling the handler (`server.go:402` in go-sdk v1.8.0) and returned `validating "arguments": ... has type "string", want one of "null, integer"`. The model then said the result had no data, without retrying. The call left no `mcp tool call` line, since logging lived in the handler wrapper, which never ran.
+
+### Fix
+
+- Logging moved to receiving middleware (`logCalls`, `internal/mcp/calllog.go`), which sees every `tools/call`. The handler wrapper (`recorded`) only records the outcome it knows, `ok`, `busy`, `rejected` or `failed`, through the context; a call it never saw is logged as `invalid`. The tool name is logged only when it's one of the three tools, otherwise as `unknown`, so a client's string never reaches the log.
+- The schema stays strict: `runs` is an integer. The guide's Ollama section says `ollmcp` asks before each call, that small models such as `llama3.2` may send the wrong kind of value, and that each call is in `gk logs --cmd mcp`.
+
+### Verified
+
+- `TestEachToolCallLogsOneLine` gained `stats` with `"runs": "20"` (`invalid`) and an unknown tool named `rm -rf ~` (`tool=unknown`, `invalid`, and the name not in the log); without the `invalid` fallback both fail. The other five outcomes still pass, which shows the context reaches the handlers. `make test` passes.
+
 ## Fix: MCP results list at most 20 skipped paths
 
 ### Problem

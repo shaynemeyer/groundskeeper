@@ -543,6 +543,8 @@ Ollama doesn't connect to tools by itself; `ollmcp` from [mcp-client-for-ollama]
 uvx --from mcp-client-for-ollama ollmcp -j ~/.config/groundskeeper/mcp.json -m qwen3.8:27b-mlx
 ```
 
+`ollmcp` asks before each tool call; answer `y`, or `s` to allow them for the session. Small models such as `llama3.2` sometimes send a tool the wrong kind of value, such as a number in quotes, and Groundskeeper refuses it; a larger model such as `qwen3.8` gets it right. Each call, refused or not, is a line in `gk logs --cmd mcp`.
+
 `gk mcp` is the command these apps run; you don't need to run it yourself.
 
 ## Privacy and your data
