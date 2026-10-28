@@ -499,11 +499,51 @@ gk logs -f                        # follow new entries as they come
 
 **A warning that reports leave this Mac.** Your report folder is somewhere that syncs, such as iCloud Drive, Desktop or Documents. Set `outputDir` to a folder that doesn't sync; see [Configuration](#configuration).
 
+## Ask an AI assistant
+
+`gk mcp` lets an AI assistant answer "what's using my disk?" and suggest what to clean. It speaks [MCP](https://modelcontextprotocol.io): the assistant's app starts `gk mcp` and calls its `scan` tool, which runs a scan like `gk scan --dry` and returns each item's path, size, safety tag and suggested command. It writes no report and can't clean anything; for that, the assistant points you to the commands in this guide.
+
+**Choose the assistant with privacy in mind.** Groundskeeper sends nothing anywhere, but the app passes the scan to its model:
+
+- **Claude Desktop** sends it to Anthropic. Folder paths that name your projects and apps, and the names of files in Downloads, leave your Mac in the conversation.
+- **A local model with Ollama** keeps everything on your Mac.
+
+Paths under your home folder are written as `~`, so your user name isn't in them.
+
+**Full Disk Access.** The assistant's app starts Groundskeeper as its own process, so the access that counts is the one on `~/bin/groundskeeper` (see [Give it Full Disk Access](#give-it-full-disk-access)), not the app's.
+
+### Claude Desktop
+
+In Claude Desktop, open Settings, Developer, Edit Config, and add Groundskeeper to `claude_desktop_config.json`, with the program's full path (`echo ~/bin/groundskeeper` prints it):
+
+```json
+{
+  "mcpServers": {
+    "groundskeeper": {
+      "command": "<the full path>",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Quit Claude Desktop (Command-Q) and open it again, then ask "What's using my disk? Use Groundskeeper's scan." Claude Desktop gives up on a tool after 60 seconds, so a scan stops after 45 and lists the folders it didn't get to under skipped.
+
+### Ollama
+
+Ollama doesn't connect to tools by itself; `ollmcp` from [mcp-client-for-ollama](https://github.com/jonigl/mcp-client-for-ollama) does. Save the same `mcpServers` setting in a file, say `~/.config/groundskeeper/mcp.json`, then start it with a model that can use tools:
+
+```sh
+uvx --from mcp-client-for-ollama ollmcp -j ~/.config/groundskeeper/mcp.json -m qwen3.8:27b-mlx
+```
+
+`gk mcp` is the command these apps run; you don't need to run it yourself.
+
 ## Privacy and your data
 
 Groundskeeper is built to be safe to run with Full Disk Access:
 
-- **Nothing leaves your Mac.** It makes no network requests at all: no telemetry, no update checks. The only connection it makes is to an iPhone over the cable.
+- **Nothing leaves your Mac**, unless you connect a cloud AI assistant (see [Ask an AI assistant](#ask-an-ai-assistant)). It makes no network requests at all: no telemetry, no update checks. The only connection it makes is to an iPhone over the cable.
 - **It measures, it doesn't read.** It adds up file sizes. It never opens cookies, passwords, browsing history, messages, mail or other private files. The few files it does read are tool metadata, such as Ollama's model list and an app's `Info.plist`.
 - **No secrets in its output.** Reports, logs and saved scans hold folder paths, sizes, dates and IDs, never file contents or passwords.
 
