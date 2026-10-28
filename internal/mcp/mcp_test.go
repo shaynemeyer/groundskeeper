@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/shaynemeyer/groundskeeper/internal/logging"
 	"github.com/shaynemeyer/groundskeeper/internal/report"
 	"github.com/shaynemeyer/groundskeeper/internal/scan"
 	"github.com/shaynemeyer/groundskeeper/internal/size"
@@ -24,7 +26,7 @@ func connect(t *testing.T, s Scan) *sdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverT, clientT := sdk.NewInMemoryTransports()
-	if _, err := NewServer(Options{Version: "test", Home: home, StateDir: t.TempDir(), Scan: s}).Connect(ctx, serverT, nil); err != nil {
+	if _, err := NewServer(Options{Version: "test", Home: home, StateDir: t.TempDir(), Scan: s, Log: logging.Discard()}).Connect(ctx, serverT, nil); err != nil {
 		t.Fatal(err)
 	}
 	client := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "test"}, nil)
@@ -150,5 +152,50 @@ func TestBusyErrorReachesClient(t *testing.T) {
 	res, text := callScan(t, session)
 	if !res.IsError || text != ErrBusy.Error() {
 		t.Errorf("result = %q (error %v), want %q", text, res.IsError, ErrBusy)
+	}
+}
+
+func TestEachToolCallLogsOneLine(t *testing.T) {
+	var buf strings.Builder
+	var scanErr error
+	opts := Options{Version: "test", Home: home, StateDir: t.TempDir(), Log: logging.Text(&buf, "mcp"),
+		Scan: func(context.Context) (report.Report, error) { return sampleReport(), scanErr }}
+	ctx := context.Background()
+	serverT, clientT := sdk.NewInMemoryTransports()
+	if _, err := NewServer(opts).Connect(ctx, serverT, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "test"}, nil).Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	calls := []struct {
+		tool    string
+		args    map[string]any
+		scanErr error
+		want    []string
+	}{
+		{"scan", nil, nil, []string{"level=INFO", "tool=scan", "outcome=ok"}},
+		{"scan", nil, ErrBusy, []string{"level=WARN", "tool=scan", "outcome=busy"}},
+		{"scan", nil, &fs.PathError{Op: "open", Path: home + "/secret", Err: fs.ErrPermission}, []string{"level=WARN", "tool=scan", "outcome=failed"}},
+		{"history", nil, nil, []string{"level=INFO", "tool=history", "outcome=ok"}},
+		{"stats", map[string]any{"runs": 0}, nil, []string{"level=WARN", "tool=stats", "outcome=rejected"}},
+	}
+	for _, c := range calls {
+		scanErr = c.scanErr
+		buf.Reset()
+		if _, err := session.CallTool(ctx, &sdk.CallToolParams{Name: c.tool, Arguments: c.args}); err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+		want := append([]string{`msg="mcp tool call"`, "duration_ms="}, c.want...)
+		if len(lines) != 1 || slices.ContainsFunc(want, func(w string) bool { return !strings.Contains(lines[0], w) }) {
+			t.Errorf("%s %v logged %q, want one line with %q", c.tool, c.args, lines, want)
+		}
+		if strings.Contains(buf.String(), home) {
+			t.Errorf("%s logged the home folder: %s", c.tool, buf.String())
+		}
 	}
 }

@@ -13,6 +13,10 @@ import (
 
 const maxRuns = 50
 
+// errRuns is what the history and stats tools return for a run count out
+// of range.
+var errRuns = fmt.Errorf("runs must be between 1 and %d", maxRuns)
+
 const historyDescription = `Show how free disk space changed over recent scans, and the items that grew ` +
 	`most between the last two scans. Reads saved scans; doesn't scan. Read-only.`
 
@@ -66,7 +70,7 @@ func runs(in RunsInput, def int) (int, error) {
 		return def, nil
 	}
 	if *in.Runs < 1 || *in.Runs > maxRuns {
-		return 0, fmt.Errorf("runs must be between 1 and %d", maxRuns)
+		return 0, errRuns
 	}
 	return *in.Runs, nil
 }

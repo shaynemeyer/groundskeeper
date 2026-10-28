@@ -10,6 +10,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/shaynemeyer/groundskeeper/internal/history"
+	"github.com/shaynemeyer/groundskeeper/internal/logging"
 	"github.com/shaynemeyer/groundskeeper/internal/metrics"
 	"github.com/shaynemeyer/groundskeeper/internal/report"
 )
@@ -53,7 +54,7 @@ func connectState(t *testing.T, dir string) *sdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverT, clientT := sdk.NewInMemoryTransports()
-	opts := Options{Version: "test", Home: home, StateDir: dir, Scan: func(context.Context) (report.Report, error) {
+	opts := Options{Version: "test", Home: home, StateDir: dir, Log: logging.Discard(), Scan: func(context.Context) (report.Report, error) {
 		t.Error("scan called")
 		return report.Report{}, nil
 	}}

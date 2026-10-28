@@ -2,6 +2,20 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 16 follow-up: a log line per MCP tool call
+
+### Built
+
+- Every tool call logs `mcp tool call` with `tool`, `duration_ms` and `outcome`: `ok`, `busy` (`ErrBusy`), `rejected` (`errRuns`, a run count out of range) or `failed`, at warn level for anything but `ok`. A generic `logged` wrapper in `internal/mcp` does it for all three tools; `Options.Log` carries the logger. Error messages aren't logged, only the outcome; `gk mcp` already logs a failed scan's kind as `mcp scan failed`.
+
+### Why
+
+- The first real `ollmcp` session showed only scans in the log: `history` and `stats` calls left no trace, since they only read snapshots.
+
+### Verified
+
+- `TestEachToolCallLogsOneLine` makes five calls (scan ok, busy and failed, history ok, stats with `runs: 0`) and checks each logs exactly one line with its level, tool and outcome and no home path; logging `rejected` as `failed` makes it fail. `TestMCPServesScanAndWritesOnlyTheLog` checks the real log file has the scan call's line. `make test` passes.
+
 ## Step 16: README setup for gk mcp
 
 ### Built
