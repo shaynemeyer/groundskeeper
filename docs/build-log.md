@@ -2,6 +2,26 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 16: README setup for gk mcp
+
+### Built
+
+- **README "Ask an AI assistant":** the three tools, what leaves the Mac with Claude Desktop and with Ollama, that `~/bin/groundskeeper` needs its own Full Disk Access, the `claude_desktop_config.json` entry and the `ollmcp` command, with a link to the guide's section. The status line mentions `gk mcp`, and "Nothing leaves your Mac" now says unless a cloud assistant is connected, as the guide does.
+- The help text and `gk help privacy` were done in step 16 (2) and (3), so this finishes step 16.
+
+### Decisions
+
+- **The config entry uses a placeholder for the full path,** with `echo ~/bin/groundskeeper` to print it, as the guide does, so no personal path is written down and nothing is claimed about whether Claude Desktop expands `~` (not tested).
+
+### Verified
+
+- The README's JSON snippet parses (`json.loads`), its link anchor matches the guide's "Ask an AI assistant" heading, and it holds no `/Users/` or `/home/` path. `make test` passes.
+
+### Open
+
+- Trying `gk mcp` through a real client after `make install`; `ollmcp` with a local model keeps that on the Mac.
+- The plan's open decisions on Claude Desktop as a supported client and the SDK's 4 MB.
+
 ## Step 16: history and stats MCP tools
 
 ### Built
