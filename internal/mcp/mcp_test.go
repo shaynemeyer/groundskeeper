@@ -24,7 +24,7 @@ func connect(t *testing.T, s Scan) *sdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverT, clientT := sdk.NewInMemoryTransports()
-	if _, err := NewServer("test", home, s).Connect(ctx, serverT, nil); err != nil {
+	if _, err := NewServer(Options{Version: "test", Home: home, StateDir: t.TempDir(), Scan: s}).Connect(ctx, serverT, nil); err != nil {
 		t.Fatal(err)
 	}
 	client := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "test"}, nil)
@@ -57,7 +57,7 @@ func callScan(t *testing.T, session *sdk.ClientSession) (*sdk.CallToolResult, st
 	return res, res.Content[0].(*sdk.TextContent).Text
 }
 
-func TestToolsAreScanOnlyAndReadOnly(t *testing.T) {
+func TestToolsAreScanHistoryStatsAndReadOnly(t *testing.T) {
 	session := connect(t, func(context.Context) (report.Report, error) { return report.Report{}, nil })
 	list, err := session.ListTools(context.Background(), nil)
 	if err != nil {
@@ -70,8 +70,8 @@ func TestToolsAreScanOnlyAndReadOnly(t *testing.T) {
 			t.Errorf("%s isn't marked read-only", tool.Name)
 		}
 	}
-	if fmt.Sprint(names) != "[scan]" {
-		t.Errorf("tools = %v, want [scan]", names)
+	if fmt.Sprint(names) != "[history scan stats]" {
+		t.Errorf("tools = %v, want [history scan stats]", names)
 	}
 }
 

@@ -130,6 +130,21 @@ func (c *mcpClient) close() string {
 	return c.stderr.String()
 }
 
+// tool calls a tool with no arguments and decodes its structured result
+// into v.
+func (c *mcpClient) tool(name string, v any) {
+	c.t.Helper()
+	var res struct {
+		StructuredContent json.RawMessage `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(c.call("tools/call", map[string]any{"name": name, "arguments": map[string]any{}}), &res); err != nil {
+		c.t.Fatal(err)
+	}
+	if err := json.Unmarshal(res.StructuredContent, v); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
 // callScan calls the scan tool and returns its text and whether it's an
 // error result.
 func (c *mcpClient) callScan() (text string, isError bool) {
@@ -196,8 +211,15 @@ func TestMCPServesScanAndWritesOnlyTheLog(t *testing.T) {
 	if err := json.Unmarshal(c.call("tools/list", map[string]any{}), &tools); err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 1 || tools.Tools[0].Name != "scan" || !tools.Tools[0].Annotations.ReadOnlyHint {
-		t.Fatalf("tools = %+v, want only scan, read-only", tools.Tools)
+	var names []string
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+		if !tool.Annotations.ReadOnlyHint {
+			t.Errorf("%s isn't marked read-only", tool.Name)
+		}
+	}
+	if !slices.Equal(names, []string{"history", "scan", "stats"}) {
+		t.Fatalf("tools = %v, want history, scan and stats", names)
 	}
 	text, res := c.scan()
 	if stderr := c.close(); stderr != "" {
@@ -296,4 +318,29 @@ func TestMCPLockSharedAcrossProcesses(t *testing.T) {
 		t.Fatalf("lock after the holder died: %v", err)
 	}
 	unlock()
+}
+
+func TestMCPHistoryAndStatsReadSavedScans(t *testing.T) {
+	fakeHome(t)
+	run(t, "scan")
+	c := startMCP(t)
+	var hist struct {
+		Scans []struct {
+			FreeBytes int64 `json:"freeBytes"`
+		} `json:"scans"`
+	}
+	c.tool("history", &hist)
+	var stats struct {
+		Runs []struct {
+			Command string `json:"command"`
+		} `json:"runs"`
+	}
+	c.tool("stats", &stats)
+	c.close()
+	if len(hist.Scans) != 1 || hist.Scans[0].FreeBytes == 0 {
+		t.Errorf("history scans = %+v, want the one saved scan", hist.Scans)
+	}
+	if len(stats.Runs) != 1 || stats.Runs[0].Command != "scan" {
+		t.Errorf("stats runs = %+v, want the saved scan's run", stats.Runs)
+	}
 }

@@ -501,7 +501,13 @@ gk logs -f                        # follow new entries as they come
 
 ## Ask an AI assistant
 
-`gk mcp` lets an AI assistant answer "what's using my disk?" and suggest what to clean. It speaks [MCP](https://modelcontextprotocol.io): the assistant's app starts `gk mcp` and calls its `scan` tool, which runs a scan like `gk scan --dry` and returns each item's path, size, safety tag and suggested command. It writes no report and can't clean anything; for that, the assistant points you to the commands in this guide.
+`gk mcp` lets an AI assistant answer "what's using my disk?" and suggest what to clean. It speaks [MCP](https://modelcontextprotocol.io): the assistant's app starts `gk mcp` and calls its tools:
+
+- `scan` runs a scan like `gk scan --dry` and returns each item's path, size, safety tag and suggested command.
+- `history` shows free space over recent scans and what grew most, like `gk history`.
+- `stats` shows how recent scans went, like `gk stats`.
+
+None of them writes a report or saved scan, and none can clean anything; for that, the assistant points you to the commands in this guide.
 
 **Choose the assistant with privacy in mind.** Groundskeeper sends nothing anywhere, but the app passes the scan to its model:
 
