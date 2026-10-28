@@ -2,6 +2,35 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 16: history and stats MCP tools
+
+### Built
+
+- **`history`** (`internal/mcp/snapshots.go`): each saved scan's time, free bytes, change from the scan before (left out for the first saved scan) and disk size, for the last `runs` scans (default 10), and the items that grew most between the last two scans (`history.Compare`) with section, label, path, bytes grown and whether the item is new. Like `gk history`.
+- **`stats`**: the last `runs` scans' metrics (default 1), as `gk stats --json` prints them, each with that scan's skipped paths, and the clean runs since the oldest scan included.
+- Both read the state folder (`Options.StateDir`, `history.Dir` in `gk mcp`) and never scan. `NewServer` and `Serve` now take `Options` (version, home, state folder, scan function).
+- `gk mcp --help` lists the three tools; the guide's "Ask an AI assistant" does too.
+
+### Decisions
+
+- **`runs` is optional and checked by hand:** a pointer, so leaving it out gives the default while `0` is rejected like `-1` and `51`, with `runs must be between 1 and 50`.
+- **Empty history gives empty lists, not an error,** so the assistant can say there are no saved scans yet.
+- **Snapshot paths go through the same `tilde` as `scan`:** growth paths and skipped paths. `metrics.Run` and `metrics.Clean` hold only times, counts, sizes and error kinds, so they're returned as they are.
+
+### Problems found
+
+- **Without the range check, `runs: -1` crashed the server** (`slice bounds out of range [4:3]`, from `all[max(0, len(all)-n):]`); the check now runs before any slicing.
+
+### Verified
+
+- `make test` passes; govulncheck reports only the known `x/crypto/openpgp` module finding. New tests in `internal/mcp/snapshots_test.go` with three saved scans and two clean runs: the trend and changes, growth with `~` paths and the new item, no change on the first scan, empty lists with no scans, the last run's skipped paths with `~` and the clean since it, all three runs with both cleans, and `0`, `-1` and `51` rejected for both tools while `50` works. Every result is checked for the home folder, and a stray `scan` call fails the test. The tool list test now wants exactly `history`, `scan` and `stats`, all read-only. `TestMCPHistoryAndStatsReadSavedScans` runs `gk scan`, then reads that scan back through `gk mcp`'s `history` and `stats`.
+- Removing the `~` rewriting from skipped paths, and removing the range check, each made the tests fail.
+
+### Open
+
+- Step 16 (4): the README setup for Claude Desktop and `ollmcp`. The guide and `gk help privacy` already cover them.
+- Not yet tried through a real client after `make install`.
+
 ## Step 16: gk mcp with the scan tool
 
 ### Built
