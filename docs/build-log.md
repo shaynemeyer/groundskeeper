@@ -2,6 +2,22 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Fix: MCP results list at most 20 skipped paths
+
+### Problem
+
+- `stats` returned every skipped path of each run, and `scan` every path it skipped. One partial snapshot with 1,018 skipped paths made `stats` 70 KB, roughly 20,000 tokens, which `qwen3.8:27b` took minutes to read (see the fix below). Interrupted scans no longer save such snapshots, but a slow scan or a large project folder without access can still skip hundreds.
+
+### Fix
+
+- `scan` lists the first 20 skipped paths (`maxSkipped`), with `skippedTotal` and `skippedByReason` counting all of them. The Full Disk Access advice still comes from every skip, not only the 20 listed.
+- `stats` lists each run's first 20 skipped paths with `skippedPathsTotal`; per-scanner skip and timeout counts were already in the run's metrics. Its description says "the first 20".
+
+### Verified
+
+- `TestScanListsFirstSkippedPathsAndCountsAll` (25 timeouts, then 1 permission skip: 20 listed, 26 in total, both counts by reason, and the advice) and `TestStatsStaysSmallWithManySkippedPaths` (1,018 skipped paths: 20 listed, 1,018 in total, under 8 KB). Without the cap, the stats test fails with a 54 KB result. `make test` passes.
+- The partial 07:15 snapshot was moved to the Trash, at the user's request.
+
 ## Fix: an interrupted scan saved a partial snapshot
 
 ### Problem

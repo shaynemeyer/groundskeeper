@@ -21,7 +21,7 @@ const historyDescription = `Show how free disk space changed over recent scans, 
 	`most between the last two scans. Reads saved scans; doesn't scan. Read-only.`
 
 const statsDescription = `Show how recent scans went: each scanner's time, items, size, skipped and ` +
-	`timed-out paths and errors, the paths that couldn't be read, and the clean commands run since. ` +
+	`timed-out paths and errors, the first 20 paths that couldn't be read, and the clean commands run since. ` +
 	`Reads saved scans; doesn't scan. Read-only.`
 
 // RunsInput is the history and stats tools' argument.
@@ -61,7 +61,8 @@ type StatsResult struct {
 // RunStats is one scan's metrics and the paths it couldn't read.
 type RunStats struct {
 	metrics.Run
-	SkippedPaths []string `json:"skippedPaths"`
+	SkippedPaths      []string `json:"skippedPaths"` // the first maxSkipped
+	SkippedPathsTotal int      `json:"skippedPathsTotal"`
 }
 
 // runs returns the requested count, def when it's left out.
@@ -123,8 +124,8 @@ func statsOf(opts Options, in RunsInput) (*sdk.CallToolResult, StatsResult, erro
 	res := StatsResult{Runs: []RunStats{}, Cleans: []metrics.Clean{}}
 	recent := all[max(0, len(all)-n):]
 	for _, s := range recent {
-		r := RunStats{Run: s.Run, SkippedPaths: []string{}}
-		for _, p := range s.Skipped {
+		r := RunStats{Run: s.Run, SkippedPaths: []string{}, SkippedPathsTotal: len(s.Skipped)}
+		for _, p := range s.Skipped[:min(len(s.Skipped), maxSkipped)] {
 			r.SkippedPaths = append(r.SkippedPaths, tilde(p, opts.Home))
 		}
 		res.Runs = append(res.Runs, r)

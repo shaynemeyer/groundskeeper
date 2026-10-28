@@ -199,3 +199,26 @@ func TestEachToolCallLogsOneLine(t *testing.T) {
 		}
 	}
 }
+
+func TestScanListsFirstSkippedPathsAndCountsAll(t *testing.T) {
+	rep := sampleReport()
+	rep.Skipped = nil
+	for i := range 25 {
+		rep.Skipped = append(rep.Skipped, size.Skip{Path: fmt.Sprintf("%s/slow/%d", home, i), Reason: "timeout"})
+	}
+	rep.Skipped = append(rep.Skipped, size.Skip{Path: home + "/Library/Mail", Reason: "permission"})
+	session := connect(t, func(context.Context) (report.Report, error) { return rep, nil })
+	_, text := callScan(t, session)
+	var got ScanResult
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skipped) != maxSkipped || got.SkippedTotal != 26 ||
+		got.SkippedByReason["timeout"] != 25 || got.SkippedByReason["permission"] != 1 {
+		t.Errorf("listed %d, total %d, by reason %v; want %d, 26, 25 timeout and 1 permission",
+			len(got.Skipped), got.SkippedTotal, got.SkippedByReason, maxSkipped)
+	}
+	if got.Advice == "" {
+		t.Error("no Full Disk Access advice for a permission skip past the first 20")
+	}
+}
