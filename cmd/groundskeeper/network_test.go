@@ -14,6 +14,10 @@ const module = "github.com/shaynemeyer/groundskeeper"
 // the iPhone over USB through usbmuxd.
 const usbPackage = module + "/internal/iphone"
 
+// mcpPackage is the only package allowed to import the MCP SDK, which also
+// holds HTTP transports that gk mcp never uses.
+const mcpPackage = module + "/internal/mcp"
+
 // networkImport reports whether an import can open network connections.
 func networkImport(path string) bool {
 	return path == "net" || strings.HasPrefix(path, "net/") ||
@@ -21,7 +25,8 @@ func networkImport(path string) bool {
 }
 
 // TestNoNetworkImports keeps the tool offline: none of its own packages may
-// import a network package, and only usbPackage may import go-ios.
+// import a network package, only usbPackage may import go-ios, and only
+// mcpPackage may import the MCP SDK.
 func TestNoNetworkImports(t *testing.T) {
 	out, err := exec.Command("go", "list", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", module+"/...").Output()
 	if err != nil {
@@ -36,6 +41,9 @@ func TestNoNetworkImports(t *testing.T) {
 			}
 			if strings.HasPrefix(imp, "github.com/danielpaulus/go-ios") && pkg != usbPackage {
 				t.Errorf("%s imports %s; only %s may talk to the iPhone", pkg, imp, usbPackage)
+			}
+			if strings.HasPrefix(imp, "github.com/modelcontextprotocol/go-sdk") && pkg != mcpPackage {
+				t.Errorf("%s imports %s; only %s may serve MCP", pkg, imp, mcpPackage)
 			}
 		}
 	}
