@@ -14,9 +14,16 @@ type ScanResult struct {
 	DiskTotal   int64  `json:"diskTotalBytes"`
 	Reclaimable int64  `json:"reclaimableBytes"`
 	Items       []Item `json:"items"`
-	Skipped     []Skip `json:"skipped"`
-	Advice      string `json:"advice,omitempty"`
+	Skipped     []Skip `json:"skipped"` // the first maxSkipped
+	// SkippedTotal and SkippedByReason count every skipped path.
+	SkippedTotal    int            `json:"skippedTotal"`
+	SkippedByReason map[string]int `json:"skippedByReason"`
+	Advice          string         `json:"advice,omitempty"`
 }
+
+// maxSkipped is how many skipped paths a result lists. An interrupted or
+// slow scan can skip a thousand, too much for a local model to read.
+const maxSkipped = 20
 
 // Item is one row of the report.
 type Item struct {
@@ -40,11 +47,13 @@ const permissionAdvice = "Some folders were skipped for permission. Grant Full D
 
 func resultOf(rep report.Report, home string) ScanResult {
 	res := ScanResult{
-		DiskFree:    rep.Disk.Free,
-		DiskTotal:   rep.Disk.Total,
-		Reclaimable: rep.Reclaimable(),
-		Items:       []Item{},
-		Skipped:     []Skip{},
+		DiskFree:        rep.Disk.Free,
+		DiskTotal:       rep.Disk.Total,
+		Reclaimable:     rep.Reclaimable(),
+		Items:           []Item{},
+		Skipped:         []Skip{},
+		SkippedTotal:    len(rep.Skipped),
+		SkippedByReason: map[string]int{},
 	}
 	for _, s := range rep.Sections {
 		for _, it := range s.Items {
@@ -59,8 +68,11 @@ func resultOf(rep report.Report, home string) ScanResult {
 			})
 		}
 	}
-	for _, sk := range rep.Skipped {
-		res.Skipped = append(res.Skipped, Skip{Path: tilde(sk.Path, home), Reason: sk.Reason})
+	for i, sk := range rep.Skipped {
+		if i < maxSkipped {
+			res.Skipped = append(res.Skipped, Skip{Path: tilde(sk.Path, home), Reason: sk.Reason})
+		}
+		res.SkippedByReason[sk.Reason]++
 		if sk.Reason == "permission" {
 			res.Advice = permissionAdvice
 		}

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -162,5 +163,27 @@ func TestRunCountsOutOfRangeRejected(t *testing.T) {
 		}
 		var v any
 		call(t, session, tool, map[string]any{"runs": 50}, &v)
+	}
+}
+
+// TestStatsStaysSmallWithManySkippedPaths: an interrupted scan once saved
+// 1,018 skipped paths, and stats returned 70 KB, which took a local model
+// minutes to read.
+func TestStatsStaysSmallWithManySkippedPaths(t *testing.T) {
+	dir := t.TempDir()
+	s := history.Snapshot{Time: day1}
+	for i := range 1018 {
+		s.Skipped = append(s.Skipped, fmt.Sprintf("%s/github/project-%d/node_modules/some/deep/folder", home, i))
+	}
+	if err := history.SaveScan(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	var got StatsResult
+	text := call(t, connectState(t, dir), "stats", nil, &got)
+	if len(got.Runs[0].SkippedPaths) != maxSkipped || got.Runs[0].SkippedPathsTotal != 1018 {
+		t.Errorf("listed %d, total %d; want %d and 1018", len(got.Runs[0].SkippedPaths), got.Runs[0].SkippedPathsTotal, maxSkipped)
+	}
+	if len(text) > 8000 {
+		t.Errorf("stats result is %d bytes, want under 8,000", len(text))
 	}
 }
