@@ -60,8 +60,8 @@ Check it with gk doctor, or run it now with:
 		{
 			Use:     "privacy",
 			GroupID: groupTopics,
-			Short:   "Full Disk Access, FileVault, backups and what stays on this Mac",
-			Long: `Nothing leaves this Mac: no network requests, no telemetry. Scans measure
+			Short:   "Full Disk Access, FileVault, backups, AI assistants and what stays on this Mac",
+			Long: `Groundskeeper makes no network requests and sends no telemetry. Scans measure
 sizes without reading file contents. Reports, snapshots and logs hold paths,
 sizes, dates and IDs only, and are readable only by you.
 
@@ -69,7 +69,13 @@ Full Disk Access
   macOS protects Downloads, Mail, Safari and some browser and app data.
   Without Full Disk Access those are listed under Skipped paths. Grant it in
   System Settings > Privacy & Security > Full Disk Access: to your terminal
-  for runs you start, and to ~/bin/groundskeeper for the schedule.
+  for runs you start, and to ~/bin/groundskeeper for the schedule and gk mcp.
+
+AI assistants (gk mcp)
+  An MCP client passes gk mcp's results to its model. With Claude Desktop they
+  go to Anthropic, so paths naming your projects, apps and Downloads files
+  leave this Mac; with a local Ollama model they stay. Paths under your home
+  folder are written as ~. Nothing runs gk mcp unless you set up a client.
 
 FileVault
   Reports, snapshots and logs aren't encrypted by groundskeeper; FileVault

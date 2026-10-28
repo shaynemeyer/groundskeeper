@@ -48,7 +48,7 @@ command yourself.`,
 		&cobra.Group{ID: groupSetup, Title: "Setup"},
 		&cobra.Group{ID: groupTopics, Title: "Help topics (gk help <topic>)"},
 	)
-	root.AddCommand(newScanCmd(global), newIPhoneCmd(global), newHistoryCmd(global), newStatsCmd(global), newLogsCmd(global), newReviewCmd(global), newCleanCmd(global), newSetupCmd(global), newDoctorCmd(global))
+	root.AddCommand(newScanCmd(global), newIPhoneCmd(global), newHistoryCmd(global), newStatsCmd(global), newLogsCmd(global), newMCPCmd(global), newReviewCmd(global), newCleanCmd(global), newSetupCmd(global), newDoctorCmd(global))
 	root.AddCommand(newTopics()...)
 	return root
 }

@@ -2,6 +2,41 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 16: gk mcp with the scan tool
+
+### Built
+
+- **`internal/mcp`,** the only package that imports the SDK (`github.com/modelcontextprotocol/go-sdk` v1.8.0). `NewServer` offers one tool, `scan`, marked `readOnlyHint`; `Serve` runs it on a reader and writer through `IOTransport`, so `internal/cli` never names an SDK type. The result (`ScanResult`) holds disk free and total, the reclaimable total, each item's section, label, path, bytes, safety, note and hint, the skipped paths with their reason, and advice about Full Disk Access when anything was skipped for permission. Paths under home are written `~/rest`, and quoted paths in hints `~/'rest'`. A failed scan reaches the client as `scan failed: <kind>`.
+- **`gk mcp`** (`internal/cli/mcp.go`), in the Report group. Each `scan` call runs the Mac scanners like `scan --dry` under a 45-second context and writes no report, snapshot or history. It logs to the log file with `cmd: mcp` and never to stdout or stderr, even with `--verbose`. The help says what leaves the Mac with each kind of client and that the binary's own Full Disk Access is what counts. `gk help privacy` gained an "AI assistants" part and no longer says nothing leaves the Mac without qualification; the guide gained "Ask an AI assistant" with Claude Desktop and `ollmcp` setup, and its privacy section says the same.
+- **One scan at a time:** `lockScan` takes `flock(LOCK_EX|LOCK_NB)` on `~/.local/state/groundskeeper/mcp.lock`. While it's held, in this process or another, `scan` returns `mcp.ErrBusy`, whose fixed message reaches the client.
+- **`golang.org/x/net` v0.62.0,** in its own commit: govulncheck reported GO-2026-6866 and GO-2026-6860 in v0.61.0, which `main` already required through go-ios (`go mod why -m`), so they were new advisories, not something the SDK brought.
+
+### Decisions
+
+- **The budget is a context deadline around the scanners,** not a change to the size engine: once it passes, `Measure` records every folder it hasn't finished as `timeout`, and scanners don't fail.
+- **`flock`, not a PID file:** the kernel releases it when a process exits or crashes, so a stuck lock can't outlive a server. The lock file stays after a scan; removing it could race with another process taking it.
+- **`ErrBusy` passes through as is; every other scan error is reduced to its kind,** since only `ErrBusy`'s text is fixed.
+- **Item sizes stay in bytes only.** Both local models in the spike read them correctly.
+- **The help example and guide use placeholders for the full path** (`echo ~/bin/groundskeeper` prints it); the guide's personal-data test rejects `/Users/` and `/home/` paths.
+
+### Problems found
+
+- **The first stdout test deadlocked instead of failing.** With a stray line written to stdout before the server started, the test hung. Cause: `io.Pipe` has no buffer, so `gk mcp` blocked writing its stray line while the test blocked writing `initialize`. Real stdio has a kernel buffer, so the test now uses `os.Pipe`; with that, the stray line is read and reported (`stdout line isn't a protocol message: "starting"`).
+- **flock between two opens in one process:** the man page says locks belong to files, not descriptors, but not whether two separate opens in one process conflict. `TestMCPRefusesScanWhileAnotherRuns` shows they do: the test holds the lock and `gk mcp`'s own `lockScan`, in the same process, gets `ErrBusy`.
+
+### Verified
+
+- `make test` passes; govulncheck reports only the known `x/crypto/openpgp` module finding. New tests: `internal/mcp/mcp_test.go` (the tool list is exactly `scan`, read-only; paths, hints and skips are written with `~`; hints still expand to the right path when run by `/bin/sh`, including names with spaces, quotes and `$(...)`; other paths are left alone; errors give only the kind; `ErrBusy` reaches the client) and `internal/cli/mcp_test.go` (through the real command with raw JSON-RPC on OS pipes: every stdout line is a protocol message, stderr is empty with `--verbose`, the result holds neither home nor the secret marker, the only files added are the log and the lock; the budget lists folders as `timeout`; a held lock refuses a scan, in this process and from a child process, and is free again after the child is killed). `TestNoNetworkImports` allows the SDK only in `internal/mcp`; `TestScanMakesNoConnections` also runs `gk mcp` under the sandbox, lists the tools and calls `scan`.
+- Each check was shown to fail when the code broke it: replacing `~/'` with the spike's `'~/` (four shell cases fail), an SDK import in `internal/cli`, a stray stdout line, `--verbose` writing to stderr, no context deadline, no `flock`, and a dial to `127.0.0.1` in `gk mcp` (killed by the sandbox).
+- The built binary on real stdio through Fang, from the Claude Code shell: stderr empty, two JSON-RPC lines, 33 items and 26 permission skips with the advice, and no home path in the output.
+- The binary grew from 18.7 MB to 22.7 MB with the SDK.
+
+### Open
+
+- Not yet tried through a real client after `make install`; `ollmcp` with a local model keeps that test on the Mac.
+- Once the budget has passed, a folder that doesn't exist is also listed as `timeout`, because `Measure` checks the context before `WalkDir` reports the missing folder.
+- Step 16 (3) `history` and `stats`, and (4) the README setup. The plan's open decisions on Claude Desktop as a supported client and the SDK's 4 MB remain.
+
 ## Step 16: MCP spike
 
 ### Built
