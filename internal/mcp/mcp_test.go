@@ -144,3 +144,11 @@ func TestScanErrorReportsKindOnly(t *testing.T) {
 		t.Errorf("error text = %q, want the kind without the path", text)
 	}
 }
+
+func TestBusyErrorReachesClient(t *testing.T) {
+	session := connect(t, func(context.Context) (report.Report, error) { return report.Report{}, ErrBusy })
+	res, text := callScan(t, session)
+	if !res.IsError || text != ErrBusy.Error() {
+		t.Errorf("result = %q (error %v), want %q", text, res.IsError, ErrBusy)
+	}
+}

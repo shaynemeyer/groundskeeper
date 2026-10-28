@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -15,6 +16,10 @@ import (
 
 // Scan runs a read-only scan of the home folder and writes no files.
 type Scan func(ctx context.Context) (report.Report, error)
+
+// ErrBusy is what a Scan returns while another scan is running. Its message
+// reaches the client as is.
+var ErrBusy = errors.New("another scan is already running; try again in a minute")
 
 const scanDescription = `Scan this Mac for disk space that can be reclaimed: caches, AI models, ` +
 	`stale build artifacts, toolchains, containers, old downloads, browser caches and unused apps. ` +
@@ -43,6 +48,9 @@ func NewServer(version, home string, scan Scan) *sdk.Server {
 		Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, ScanResult, error) {
 		rep, err := scan(ctx)
+		if errors.Is(err, ErrBusy) {
+			return nil, ScanResult{}, err
+		}
 		if err != nil {
 			return nil, ScanResult{}, fmt.Errorf("scan failed: %s", logging.KindOf(err))
 		}

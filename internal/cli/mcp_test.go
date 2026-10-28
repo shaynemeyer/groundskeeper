@@ -5,13 +5,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shaynemeyer/groundskeeper/internal/mcp"
 )
 
 // mcpClient speaks raw JSON-RPC to gk mcp through OS pipes, as a client
@@ -125,12 +130,9 @@ func (c *mcpClient) close() string {
 	return c.stderr.String()
 }
 
-func (c *mcpClient) scan() (text string, result struct {
-	Items []struct {
-		Path, Hint string
-	}
-	Skipped []struct{ Reason string }
-}) {
+// callScan calls the scan tool and returns its text and whether it's an
+// error result.
+func (c *mcpClient) callScan() (text string, isError bool) {
 	c.t.Helper()
 	var res struct {
 		IsError bool `json:"isError"`
@@ -141,8 +143,18 @@ func (c *mcpClient) scan() (text string, result struct {
 	if err := json.Unmarshal(c.call("tools/call", map[string]any{"name": "scan", "arguments": map[string]any{}}), &res); err != nil {
 		c.t.Fatal(err)
 	}
-	text = res.Content[0].Text
-	if res.IsError {
+	return res.Content[0].Text, res.IsError
+}
+
+func (c *mcpClient) scan() (text string, result struct {
+	Items []struct {
+		Path, Hint string
+	}
+	Skipped []struct{ Reason string }
+}) {
+	c.t.Helper()
+	text, isError := c.callScan()
+	if isError {
 		c.t.Fatalf("scan failed: %s", text)
 	}
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
@@ -200,8 +212,8 @@ func TestMCPServesScanAndWritesOnlyTheLog(t *testing.T) {
 	}
 	after := listFiles(t, home)
 	added := slices.DeleteFunc(slices.Clone(after), func(f string) bool { return slices.Contains(before, f) })
-	if !slices.Equal(added, []string{"Library/Logs/groundskeeper.log"}) {
-		t.Errorf("files added = %v, want only the log", added)
+	if !slices.Equal(added, []string{".local/state/groundskeeper/mcp.lock", "Library/Logs/groundskeeper.log"}) {
+		t.Errorf("files added = %v, want only the lock and the log", added)
 	}
 	log, err := os.ReadFile(filepath.Join(home, "Library/Logs/groundskeeper.log"))
 	if err != nil {
@@ -223,4 +235,65 @@ func TestMCPScanStopsAtBudget(t *testing.T) {
 	if !slices.ContainsFunc(res.Skipped, func(s struct{ Reason string }) bool { return s.Reason == "timeout" }) {
 		t.Errorf("skipped = %+v, want folders listed as timeout", res.Skipped)
 	}
+}
+
+func TestMCPRefusesScanWhileAnotherRuns(t *testing.T) {
+	home := fakeHome(t)
+	unlock, err := lockScan(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := startMCP(t)
+	text, isError := c.callScan()
+	if !isError || !strings.Contains(text, "already running") {
+		t.Errorf("scan while locked = %q (error %v), want the busy error", text, isError)
+	}
+	unlock()
+	c.scan()
+	c.close()
+}
+
+// TestHelperHoldLock is not a test: TestMCPLockSharedAcrossProcesses runs
+// the test binary with it to hold the lock from another process.
+func TestHelperHoldLock(t *testing.T) {
+	home := os.Getenv("GK_HOLD_LOCK_HOME")
+	if home == "" {
+		t.Skip("helper process only")
+	}
+	if _, err := lockScan(home); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout.WriteString("locked\n")
+	io.ReadAll(os.Stdin)
+}
+
+func TestMCPLockSharedAcrossProcesses(t *testing.T) {
+	home := fakeHome(t)
+	child := exec.Command(os.Args[0], "-test.run=^TestHelperHoldLock$")
+	child.Env = append(os.Environ(), "GK_HOLD_LOCK_HOME="+home)
+	stdin, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if line, _ := bufio.NewReader(stdout).ReadString('\n'); line != "locked\n" {
+		t.Fatalf("helper said %q", line)
+	}
+	if _, err := lockScan(home); !errors.Is(err, mcp.ErrBusy) {
+		t.Fatalf("lock held by another process: err = %v, want ErrBusy", err)
+	}
+	child.Process.Kill()
+	child.Wait()
+	unlock, err := lockScan(home)
+	if err != nil {
+		t.Fatalf("lock after the holder died: %v", err)
+	}
+	unlock()
 }

@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/shaynemeyer/groundskeeper/internal/config"
+	"github.com/shaynemeyer/groundskeeper/internal/history"
 	"github.com/shaynemeyer/groundskeeper/internal/logging"
 	"github.com/shaynemeyer/groundskeeper/internal/mcp"
 	"github.com/shaynemeyer/groundskeeper/internal/report"
@@ -77,6 +81,12 @@ func runMCP(cmd *cobra.Command, global *globalOptions) error {
 
 // mcpScan measures like gk scan --dry within mcpBudget, writing no files.
 func mcpScan(ctx context.Context, log *logging.Logger, home string, cfg config.Config) (report.Report, error) {
+	unlock, err := lockScan(home)
+	if err != nil {
+		log.Warn("mcp scan refused", logging.ErrKind(err))
+		return report.Report{}, err
+	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, mcpBudget)
 	defer cancel()
 	start := time.Now()
@@ -91,4 +101,26 @@ func mcpScan(ctx context.Context, log *logging.Logger, home string, cfg config.C
 	log.Info("mcp scan finished", logging.Duration(time.Since(start)), logging.Bytes(rep.Reclaimable()),
 		logging.Count("skipped", len(rep.Skipped)))
 	return rep, nil
+}
+
+// lockScan takes the scan lock in the state folder, which every gk mcp
+// process shares; Claude Desktop starts two. The kernel releases it if the
+// process dies.
+func lockScan(home string) (unlock func(), err error) {
+	dir := history.Dir(home)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "mcp.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, mcp.ErrBusy
+		}
+		return nil, err
+	}
+	return func() { f.Close() }, nil
 }
