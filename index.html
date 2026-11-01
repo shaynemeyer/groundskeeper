@@ -5,168 +5,420 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Groundskeeper</title>
 <meta name="description" content="A macOS terminal tool that finds disk space you can reclaim on your Mac and a connected iPhone. Read-only scans, nothing leaves your Mac.">
+<meta property="og:title" content="Groundskeeper">
+<meta property="og:description" content="Keep your Mac's disk, and a connected iPhone, free of clutter.">
+<meta property="og:image" content="https://shaynemeyer.github.io/groundskeeper/img/rook.jpg">
 <link rel="icon" href="img/rook.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --green: #2F5D3A; --green-dark: #1E3B25; --amber: #D9922E; --charcoal: #2B2A28;
+  --green: #2F5D3A; --green-dark: #1E3B25; --green-deep: #142A1A; --green-soft: #4E7F59;
+  --amber: #D9922E; --rust: #C9462B; --olive: #6F8F3A; --charcoal: #2B2A28; --cream: #F3EBDD;
   --bg: #F3EBDD; --surface: #FBF7EF; --text: #2B2A28; --muted: #5E5850; --line: #DDD2BF;
-  --accent: var(--green); --code-bg: #2B2A28; --code-text: #F3EBDD;
+  --accent: #2F5D3A; --shadow: 0 1px 2px rgba(43,42,40,.06), 0 12px 32px -12px rgba(43,42,40,.25);
+  --display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1C1B19; --surface: #252421; --text: #F3EBDD; --muted: #B5ADA0; --line: #3A3834;
-    --accent: #7FB08A; --code-bg: #121110; --code-text: #F3EBDD;
+    --bg: #1A1917; --surface: #23221F; --text: #F3EBDD; --muted: #B5ADA0; --line: #37352F;
+    --accent: #8CC09A; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 16px 40px -16px rgba(0,0,0,.7);
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
-  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden;
+  font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
 a { color: var(--accent); }
-code, pre, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-h1, h2, h3 { line-height: 1.2; }
-h2 { font-size: 1.8rem; margin: 0 0 .5rem; }
-section { padding: 64px 0; border-top: 1px solid var(--line); }
+code { font-family: var(--mono); font-size: .88em; background: color-mix(in srgb, var(--amber) 16%, transparent); padding: .1em .35em; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.1; letter-spacing: -.02em; }
+h2 { font-size: clamp(2rem, 4.5vw, 2.9rem); margin: 0 0 .6rem; font-weight: 800; }
+.eyebrow { font-family: var(--mono); font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: var(--amber); font-weight: 700; margin: 0 0 .8rem; }
+.sub { color: var(--muted); font-size: 1.12rem; max-width: 40em; margin: 0; }
+section { padding: 104px 0; }
 
-header.hero { padding: 72px 0 56px; display: grid; grid-template-columns: 1fr auto; gap: 40px; align-items: center; }
-.hero h1 { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: clamp(2.2rem, 6vw, 3.4rem); margin: 0 0 .3em; }
-.hero p.lead { font-size: 1.25rem; color: var(--muted); margin: 0 0 1.5rem; max-width: 34em; }
-.rook { width: 220px; height: 220px; border-radius: 50%; display: block; }
+/* Nav */
+nav { position: absolute; top: 0; left: 0; right: 0; z-index: 5; }
+nav .wrap { display: flex; align-items: center; justify-content: space-between; padding-top: 20px; padding-bottom: 20px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--cream); text-decoration: none; font-family: var(--mono); font-weight: 700; }
+.brand img { width: 34px; height: 34px; border-radius: 50%; }
+nav ul { display: flex; gap: 24px; list-style: none; margin: 0; padding: 0; }
+nav ul a { color: color-mix(in srgb, var(--cream) 80%, transparent); text-decoration: none; font-size: .95rem; }
+nav ul a:hover { color: var(--cream); }
+
+/* Hero */
+.hero { position: relative; overflow: hidden; color: var(--cream); padding: 150px 0 120px;
+  background:
+    radial-gradient(900px 500px at 85% 10%, rgba(217,146,46,.22), transparent 60%),
+    radial-gradient(700px 500px at 0% 100%, rgba(78,127,89,.45), transparent 60%),
+    linear-gradient(160deg, var(--green) 0%, var(--green-dark) 55%, var(--green-deep) 100%); }
+.hero::after { content: ""; position: absolute; inset: auto 0 -1px 0; height: 80px; background: var(--bg);
+  clip-path: ellipse(75% 100% at 50% 100%); }
+.hero .wrap { position: relative; z-index: 2; display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 999px; background: rgba(243,235,221,.1);
+  border: 1px solid rgba(243,235,221,.18); font-size: .85rem; margin-bottom: 24px; }
+.pill b { background: var(--amber); color: var(--charcoal); border-radius: 999px; padding: 1px 8px; font-size: .75rem; }
+.hero h1 { font-size: clamp(2.8rem, 7vw, 4.6rem); font-weight: 800; margin: 0 0 20px; }
+.hero h1 em { font-style: normal; color: var(--amber); }
+.hero .lead { font-size: 1.2rem; color: rgba(243,235,221,.82); margin: 0 0 32px; max-width: 30em; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
-.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; }
-.btn.primary { background: var(--green); color: #F3EBDD; }
-.btn.secondary { border: 1px solid var(--line); color: var(--text); background: var(--surface); }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 10px; text-decoration: none; font-weight: 600;
+  transition: transform .15s ease, box-shadow .15s ease, background .15s; }
+.btn:hover { transform: translateY(-2px); }
+.btn.primary { background: var(--amber); color: var(--charcoal); box-shadow: 0 8px 24px -8px rgba(217,146,46,.7); }
+.btn.ghost { color: var(--cream); border: 1px solid rgba(243,235,221,.3); }
+.btn.ghost:hover { background: rgba(243,235,221,.08); }
+.btn svg { width: 18px; height: 18px; }
 
-pre { background: var(--code-bg); color: var(--code-text); padding: 18px 20px; border-radius: 10px; overflow-x: auto; font-size: .92rem; line-height: 1.5; margin: 0; }
-pre .c { color: #9C9488; }
+/* Terminal */
+.term-wrap { position: relative; }
+.term { background: #161513; border-radius: 14px; box-shadow: 0 40px 80px -24px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.07);
+  font-family: var(--mono); font-size: .84rem; line-height: 1.7; color: var(--cream); overflow: hidden; transform: rotate(-1deg); }
+.term-bar { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: #201F1C; border-bottom: 1px solid rgba(255,255,255,.05); }
+.term-bar i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.term-bar i:nth-child(1) { background: #FF5F57; } .term-bar i:nth-child(2) { background: #FEBC2E; } .term-bar i:nth-child(3) { background: #28C840; }
+.term-bar span { margin-left: auto; margin-right: auto; color: #8A8178; font-size: .75rem; transform: translateX(-20px); }
+.term-body { padding: 20px 22px 24px; min-height: 290px; white-space: pre; overflow-x: auto; }
+.term .p { color: var(--green-soft); } .term .dim { color: #8A8178; }
+.t-safe { color: #8CC09A; font-weight: 700; } .t-review { color: var(--amber); font-weight: 700; } .t-amber { color: var(--amber); }
+.typed { display: inline-block; overflow: hidden; vertical-align: bottom; width: 0; animation: type 1.1s steps(13) .4s forwards; }
+.caret { display: inline-block; width: .6em; height: 1.1em; background: var(--cream); vertical-align: text-bottom; animation: blink 1s step-end infinite; }
+.line { opacity: 0; animation: fade .35s ease forwards; }
+@keyframes type { to { width: 13ch; } }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.badge { position: absolute; right: -18px; bottom: -34px; width: 116px; height: 116px; border-radius: 50%; z-index: 3;
+  box-shadow: 0 16px 40px -10px rgba(0,0,0,.6); border: 4px solid var(--cream); animation: bob 5s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-8px) rotate(4deg); } }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
-.card h3 { margin: 0 0 .4rem; font-size: 1.05rem; }
-.card p { margin: 0; color: var(--muted); font-size: .95rem; }
+/* Leaves */
+.leaf { position: absolute; top: -40px; width: 22px; height: 22px; z-index: 1; opacity: .85; animation: fall linear infinite; }
+.leaf svg { width: 100%; height: 100%; animation: sway 3s ease-in-out infinite alternate; }
+@keyframes fall { to { transform: translateY(820px) rotate(320deg); } }
+@keyframes sway { from { transform: translateX(-14px) rotate(-20deg); } to { transform: translateX(14px) rotate(25deg); } }
 
-.shot { margin: 28px 0 0; }
-.shot img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); display: block; }
-.shot figcaption { color: var(--muted); font-size: .9rem; margin-top: 8px; }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+/* Stats */
+.stats { margin-top: -10px; position: relative; z-index: 3; }
+.stats .wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; box-shadow: var(--shadow); }
+.stat b { display: block; font-family: var(--display); font-size: 2.1rem; font-weight: 800; line-height: 1; margin-bottom: 6px; color: var(--accent); }
+.stat span { color: var(--muted); font-size: .92rem; }
 
-.tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-.tag { font-family: ui-monospace, Menlo, monospace; font-size: .85rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
-.tag.safe { background: var(--green); color: #F3EBDD; }
+/* Features */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 48px; }
+.card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 26px;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s; }
+.card:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); }
+.icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 16px; color: var(--cream); }
+.icon svg { width: 24px; height: 24px; }
+.card h3 { margin: 0 0 6px; font-size: 1.2rem; }
+.card p { margin: 0; color: var(--muted); font-size: .96rem; }
+.i1 { background: var(--green); } .i2 { background: var(--amber); color: var(--charcoal); } .i3 { background: var(--rust); }
+.i4 { background: var(--olive); } .i5 { background: var(--charcoal); } .i6 { background: var(--green-soft); }
+
+/* Report */
+.split { display: grid; grid-template-columns: .85fr 1.15fr; gap: 56px; align-items: center; }
+.browser { border-radius: 14px; overflow: hidden; background: #1C1B19; box-shadow: 0 50px 100px -30px rgba(43,42,40,.55), 0 0 0 1px var(--line);
+  transform: perspective(1600px) rotateY(-6deg) rotateX(2deg); transition: transform .5s ease; }
+.browser:hover { transform: perspective(1600px) rotateY(0) rotateX(0); }
+.browser .term-bar span { font-family: var(--mono); background: #161513; padding: 2px 40px; border-radius: 6px; transform: none; }
+.browser img { display: block; width: 100%; height: auto; }
+.tags { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; }
+.tagrow { display: flex; align-items: center; gap: 14px; }
+.tag { font-family: var(--mono); font-size: .78rem; font-weight: 700; padding: 5px 0; width: 78px; text-align: center; border-radius: 6px; flex: none; }
+.tag.safe { background: var(--green); color: var(--cream); }
 .tag.review { background: var(--amber); color: var(--charcoal); }
-.tag.keep { background: var(--charcoal); color: #F3EBDD; border: 1px solid var(--line); }
+.tag.keep { background: var(--charcoal); color: var(--cream); box-shadow: inset 0 0 0 1px rgba(243,235,221,.2); }
+.tagrow span:last-child { color: var(--muted); font-size: .96rem; }
 
-.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; align-items: start; }
-.steps ol { margin: 0; padding-left: 1.2em; }
-.steps li { margin-bottom: .6em; }
+/* iPhone */
+.phone-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 48px; }
+.phone-shots figure { margin: 0; }
+.phone-shots .browser { transform: none; }
+.phone-shots figcaption { color: var(--muted); font-size: .92rem; margin-top: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.chip { font-family: var(--mono); font-size: .82rem; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
 
-footer { padding: 40px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+/* Safety */
+.safety { background: linear-gradient(170deg, var(--green-dark), var(--green-deep)); color: var(--cream); position: relative; overflow: hidden; }
+.safety .sub { color: rgba(243,235,221,.75); }
+.safety .grid { grid-template-columns: repeat(2, 1fr); }
+.safety .card { background: rgba(243,235,221,.05); border-color: rgba(243,235,221,.12); }
+.safety .card:hover { border-color: rgba(217,146,46,.6); box-shadow: none; }
+.safety .card p { color: rgba(243,235,221,.72); }
+.safety code { background: rgba(243,235,221,.12); }
+.safety .num { font-family: var(--mono); color: var(--amber); font-size: .8rem; font-weight: 700; margin-bottom: 8px; display: block; }
+.ascii-bg { position: absolute; right: -40px; top: 40px; font-family: var(--mono); font-size: 22px; line-height: 1.25; color: rgba(243,235,221,.05); white-space: pre; pointer-events: none; }
 
-@media (max-width: 720px) {
-  header.hero { grid-template-columns: 1fr; padding-top: 40px; }
-  .rook { width: 140px; height: 140px; order: -1; }
-  .two { grid-template-columns: 1fr; }
-  section { padding: 48px 0; }
+/* MCP chat */
+.chat { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px; }
+.msg { max-width: 88%; padding: 12px 16px; border-radius: 16px; font-size: .95rem; }
+.msg.me { align-self: flex-end; background: var(--green); color: var(--cream); border-bottom-right-radius: 4px; }
+.msg.ai { align-self: flex-start; background: var(--bg); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.tool { font-family: var(--mono); font-size: .78rem; color: var(--muted); align-self: flex-start; display: flex; align-items: center; gap: 8px; }
+.tool::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--olive); }
+
+/* Install */
+.install { text-align: center; }
+.install .sub { margin: 0 auto; }
+.code { position: relative; max-width: 680px; margin: 40px auto 0; text-align: left; background: #161513; color: var(--cream); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.code pre { margin: 0; padding: 24px 26px; font-family: var(--mono); font-size: .9rem; line-height: 1.8; overflow-x: auto; }
+.code .p { color: var(--green-soft); user-select: none; } .code .c { color: #8A8178; }
+.copy { position: absolute; top: 12px; right: 12px; font: 600 .78rem var(--mono); background: rgba(243,235,221,.1); color: var(--cream);
+  border: 1px solid rgba(243,235,221,.18); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.copy:hover { background: rgba(243,235,221,.18); }
+.reqs { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+
+footer { border-top: 1px solid var(--line); padding: 48px 0 64px; color: var(--muted); font-size: .92rem; }
+footer .wrap { display: flex; justify-content: space-between; align-items: center; gap: 32px; flex-wrap: wrap; }
+footer pre { font-family: var(--mono); font-size: .72rem; line-height: 1.3; margin: 0; color: var(--accent); }
+
+.js .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (max-width: 900px) {
+  .hero .wrap, .split { grid-template-columns: 1fr; }
+  .hero { padding: 120px 0 100px; }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .stats .wrap { grid-template-columns: repeat(2, 1fr); }
+  .browser { transform: none; }
+  .badge { right: -6px; width: 88px; height: 88px; }
+  nav ul { display: none; }
+}
+@media (max-width: 600px) {
+  section { padding: 72px 0; }
+  .wrap { padding: 0 16px; }
+  .grid, .safety .grid, .phone-shots { grid-template-columns: 1fr; }
+  .term { font-size: .72rem; transform: none; }
+  .ascii-bg { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .typed { width: 13ch; } .line, .js .reveal { opacity: 1; transform: none; }
+  .leaf { display: none; }
 }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<header class="hero">
-  <div>
-    <h1>groundskeeper</h1>
-    <p class="lead">Keep your Mac's disk, and a connected iPhone, free of clutter. Twice a week Rook scans for space you can reclaim and writes a report. Nothing is deleted until you say so.</p>
-    <div class="cta">
-      <a class="btn primary" href="#install">Install</a>
-      <a class="btn secondary" href="https://github.com/shaynemeyer/groundskeeper">View on GitHub</a>
-      <a class="btn secondary" href="https://github.com/shaynemeyer/groundskeeper/blob/main/docs/user-guide.md">User guide</a>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#"><img src="img/rook.jpg" alt="">groundskeeper</a>
+    <ul>
+      <li><a href="#finds">What it finds</a></li>
+      <li><a href="#report">Report</a></li>
+      <li><a href="#safety">Safety</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="https://github.com/shaynemeyer/groundskeeper">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div id="leaves" aria-hidden="true"></div>
+  <div class="wrap">
+    <div>
+      <div class="pill"><b>macOS</b> Open source terminal tool for Mac and iPhone</div>
+      <h1>Rook tidies your Mac. <em>You decide what goes.</em></h1>
+      <p class="lead">Groundskeeper scans your Mac, and an iPhone on USB, for space you can reclaim. Twice a week it writes a report. Nothing is deleted until you say so.</p>
+      <div class="cta">
+        <a class="btn primary" href="#install">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+          Install
+        </a>
+        <a class="btn ghost" href="https://github.com/shaynemeyer/groundskeeper">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+    <div class="term-wrap">
+      <div class="term" role="img" aria-label="Terminal running gk scan --dry and showing a summary">
+        <div class="term-bar"><i></i><i></i><i></i><span>~ zsh</span></div>
+<div class="term-body"><span class="p">❯</span> <span class="typed">gk scan --dry</span>
+<span class="line" style="animation-delay:1.9s"><span class="dim">Free space </span>  123.1 GB of 494.4 GB</span>
+<span class="line" style="animation-delay:2.1s"><span class="dim">Reclaimable</span>  <span class="t-amber">18.4 GB</span> (safe items)</span>
+<span class="line" style="animation-delay:2.3s"> </span>
+<span class="line" style="animation-delay:2.5s"><span class="dim">Largest items:</span></span>
+<span class="line" style="animation-delay:2.8s">     12.6 GB  <span class="t-safe">safe  </span>  Homebrew</span>
+<span class="line" style="animation-delay:3.05s">      4.2 GB  <span class="t-review">review</span>  Ollama: llama3:8b</span>
+<span class="line" style="animation-delay:3.3s">      3.1 GB  <span class="t-safe">safe  </span>  projects/demo-app/node_modules</span>
+<span class="line" style="animation-delay:3.6s"> </span>
+<span class="line" style="animation-delay:3.8s"><span class="p">❯</span> <span class="caret"></span></span></div>
+      </div>
+      <img class="badge" src="img/rook.jpg" alt="Rook, the Groundskeeper raccoon">
     </div>
   </div>
-  <img class="rook" src="img/rook.jpg" alt="Rook, the Groundskeeper raccoon, in a hard hat">
 </header>
 
-<section>
-  <h2>Find the gigabytes hiding on your Mac</h2>
-  <p>Groundskeeper (<code>gk</code>) is a terminal tool for macOS. It measures where your space went and tells you what is safe to clear.</p>
-  <div class="grid">
-    <div class="card"><h3>Caches</h3><p>Homebrew, npm, Go, pip and the rest, with the command to clear each one.</p></div>
-    <div class="card"><h3>AI models</h3><p>Ollama, Hugging Face and LM Studio models you may have forgotten about.</p></div>
-    <div class="card"><h3>Build artifacts</h3><p>Stale <code>target</code>, <code>node_modules</code> and virtual environments in old projects.</p></div>
-    <div class="card"><h3>Toolchains and containers</h3><p>Old SDKs, toolchain versions and container images.</p></div>
-    <div class="card"><h3>Downloads and browsers</h3><p>Old downloads and browser caches, never cookies, history or passwords.</p></div>
-    <div class="card"><h3>Unused apps</h3><p>Apps on the Mac, and on your iPhone, that you probably don't use.</p></div>
+<div class="stats">
+  <div class="wrap">
+    <div class="stat reveal"><b>0</b><span>network requests. Nothing leaves your Mac.</span></div>
+    <div class="stat reveal"><b>2&times;</b><span>a week, scheduled by launchd, with a notification.</span></div>
+    <div class="stat reveal"><b>8</b><span>kinds of clutter on the Mac, plus your iPhone.</span></div>
+    <div class="stat reveal"><b>--apply</b><span>needed before any clean command deletes anything.</span></div>
   </div>
-</section>
+</div>
 
-<section>
-  <h2>One report, twice a week</h2>
-  <p>launchd runs a scan on Monday and Thursday mornings, sends a notification, and writes an HTML report: free space, what's growing fastest, and every item with its size, a safety tag and a suggested command.</p>
-  <figure class="shot">
-    <img src="img/report-top.png" alt="The top of a Groundskeeper report showing free space, growing items and caches" loading="lazy">
-    <figcaption>The report, from made-up data.</figcaption>
-  </figure>
-  <div class="tags">
-    <span class="tag safe">SAFE</span><span class="tag review">REVIEW</span><span class="tag keep">KEEP</span>
-  </div>
-  <p>Every item is tagged so you know at a glance what can go, what needs a look, and what to leave alone.</p>
-</section>
-
-<section>
-  <h2>Your iPhone too</h2>
-  <p>Plug an iPhone in over USB and <code>gk iphone</code> adds its apps, shared files and duplicate photos to the report. <code>gk review photos</code> steps through groups of similar shots, marks the best one in each to keep, and shows thumbnails inline in Ghostty.</p>
-  <div class="two">
-    <figure class="shot"><img src="img/report-iphone.png" alt="The iPhone section of the report" loading="lazy"><figcaption>Apps and storage on the phone.</figcaption></figure>
-    <figure class="shot"><img src="img/report-photos.png" alt="The duplicate photos section of the report" loading="lazy"><figcaption>Groups of duplicate and near-duplicate photos.</figcaption></figure>
-  </div>
-</section>
-
-<section>
-  <h2>Careful by design</h2>
-  <div class="grid">
-    <div class="card"><h3>Scans are read-only</h3><p>The report only suggests commands. Hints are shown, never run.</p></div>
-    <div class="card"><h3>Dry run first</h3><p>Every <code>clean</code> command shows what it would do unless you add <code>--apply</code>. Files go to the Trash.</p></div>
-    <div class="card"><h3>Nothing leaves your Mac</h3><p>No network requests, no telemetry, no update checks. The only connection is USB to your own iPhone.</p></div>
-    <div class="card"><h3>Sizes, not contents</h3><p>Scanners stat files and add up sizes. They never open cookies, history, keychains or messages.</p></div>
-  </div>
-</section>
-
-<section>
-  <h2>Ask an AI assistant</h2>
-  <p><code>gk mcp</code> serves three read-only <a href="https://modelcontextprotocol.io">MCP</a> tools, <code>scan</code>, <code>history</code> and <code>stats</code>, so an assistant can answer "what's using my disk?". It can't clean anything. Use a local Ollama model to keep results on your Mac, or Claude Desktop if you're fine with the paths going to Anthropic.</p>
-</section>
-
-<section id="install">
-  <h2>Install</h2>
-  <div class="steps">
-    <div>
-      <p>Groundskeeper builds from source. You need:</p>
-      <ol>
-        <li>macOS 26</li>
-        <li>Xcode Command Line Tools</li>
-        <li>Go</li>
-      </ol>
-      <p><code>make install</code> puts <code>gk</code> in <code>~/bin</code> and schedules the twice-weekly scan. <code>gk doctor</code> checks Full Disk Access and the rest of the setup.</p>
+<section id="finds">
+  <div class="wrap">
+    <p class="eyebrow">What it finds</p>
+    <h2>The gigabytes hiding on your Mac</h2>
+    <p class="sub">Groundskeeper (<code>gk</code>) measures where your space went and tells you what's safe to clear, with the command to do it.</p>
+    <div class="grid">
+      <div class="card reveal"><div class="icon i1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></div>
+        <h3>Caches</h3><p>Homebrew, npm, Go, pip and the rest, each with the command that clears it.</p></div>
+      <div class="card reveal"><div class="icon i2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></div>
+        <h3>AI models</h3><p>Ollama, Hugging Face and LM Studio models you may have forgotten you pulled.</p></div>
+      <div class="card reveal"><div class="icon i3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/></svg></div>
+        <h3>Build artifacts</h3><p>Stale <code>target</code>, <code>node_modules</code> and virtual environments in old projects.</p></div>
+      <div class="card reveal"><div class="icon i4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></div>
+        <h3>Toolchains and containers</h3><p>Old SDKs, extra toolchain versions and container images.</p></div>
+      <div class="card reveal"><div class="icon i5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></div>
+        <h3>Downloads and browsers</h3><p>Old downloads and browser caches. Never cookies, history or passwords.</p></div>
+      <div class="card reveal"><div class="icon i6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5h7" /></svg></div>
+        <h3>Unused apps</h3><p>Apps on the Mac, and on your iPhone, that you probably don't use any more.</p></div>
     </div>
-<pre><span class="c"># build and install</span>
-git clone https://github.com/shaynemeyer/groundskeeper.git
-cd groundskeeper
-make install
-gk doctor
+  </div>
+</section>
 
-<span class="c"># scan now and open the report</span>
-gk scan
+<section id="report" style="padding-top:40px">
+  <div class="wrap split">
+    <div class="reveal">
+      <p class="eyebrow">The report</p>
+      <h2>One page, twice a week</h2>
+      <p class="sub">Monday and Thursday mornings, Rook scans and leaves an HTML report: free space, what's growing fastest, and every item with its size and a suggested command.</p>
+      <div class="tags">
+        <div class="tagrow"><span class="tag safe">SAFE</span><span>Clear it. It comes back on its own if needed.</span></div>
+        <div class="tagrow"><span class="tag review">REVIEW</span><span>Worth a look before you remove it.</span></div>
+        <div class="tagrow"><span class="tag keep">KEEP</span><span>Shown so you know where the space went.</span></div>
+      </div>
+    </div>
+    <div class="browser reveal">
+      <div class="term-bar"><i></i><i></i><i></i><span>latest.html</span></div>
+      <img src="img/report-top.png" alt="The top of a Groundskeeper report showing free space, growing items and caches, from made-up data" loading="lazy">
+    </div>
+  </div>
+</section>
 
-<span class="c"># clear browser caches (dry run, then for real)</span>
-gk clean browsers
-gk clean browsers --apply</pre>
+<section id="iphone" style="padding-top:40px">
+  <div class="wrap">
+    <p class="eyebrow">Your iPhone too</p>
+    <h2>Plug in. Find the duplicates.</h2>
+    <p class="sub">With an iPhone on USB, <code>gk iphone</code> adds its apps, shared files and duplicate photos to the report. <code>gk review photos</code> steps through groups of similar shots and marks the best one in each to keep.</p>
+    <div class="chips">
+      <span class="chip">gk iphone</span><span class="chip">gk review photos</span><span class="chip">gk clean photos</span><span class="chip">gk clean iphone-apps</span>
+    </div>
+    <div class="phone-shots">
+      <figure class="reveal"><div class="browser"><div class="term-bar"><i></i><i></i><i></i><span>iPhone</span></div><img src="img/report-iphone.png" alt="The iPhone section of the report" loading="lazy"></div><figcaption>Apps and their data on the phone.</figcaption></figure>
+      <figure class="reveal"><div class="browser"><div class="term-bar"><i></i><i></i><i></i><span>Photos</span></div><img src="img/report-photos.png" alt="The duplicate photos section of the report" loading="lazy"></div><figcaption>Exact copies and look-alike shots, grouped.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="safety" id="safety">
+  <div class="ascii-bg" aria-hidden="true">      /\ _______ /\      |
+      \ /_______\ /      |
+      (( @ )=( @ ))      |
+       \   (_)   /       |
+        `-.___.-'        |
+        /  .-.  \--------o
+       |  (   )  |       |
+        \  `-'  /        |
+         (_/ \_)   %@& /|||\</div>
+  <div class="wrap" style="position:relative">
+    <p class="eyebrow">Careful by design</p>
+    <h2>Rook never throws anything away without asking</h2>
+    <p class="sub">Groundskeeper runs with Full Disk Access, so it treats everything it touches as private.</p>
+    <div class="grid">
+      <div class="card reveal"><span class="num">01</span><h3>Scans are read-only</h3><p>The report suggests commands. It never runs them.</p></div>
+      <div class="card reveal"><span class="num">02</span><h3>Dry run first</h3><p>Every <code>clean</code> command shows what it would do until you add <code>--apply</code>. Files go to the Trash.</p></div>
+      <div class="card reveal"><span class="num">03</span><h3>Nothing leaves your Mac</h3><p>No telemetry, no update checks. The only connection is USB to your own iPhone.</p></div>
+      <div class="card reveal"><span class="num">04</span><h3>Sizes, not contents</h3><p>It adds up file sizes and never opens cookies, history, keychains or messages.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="mcp">
+  <div class="wrap split">
+    <div class="reveal">
+      <p class="eyebrow">Ask an AI assistant</p>
+      <h2>"What's using my disk?"</h2>
+      <p class="sub"><code>gk mcp</code> serves three read-only <a href="https://modelcontextprotocol.io">MCP</a> tools, <code>scan</code>, <code>history</code> and <code>stats</code>. An assistant can explain your disk but can't clean anything.</p>
+      <p class="sub" style="margin-top:14px;font-size:.98rem">Use a local Ollama model to keep results on your Mac, or Claude Desktop if you're fine with paths going to Anthropic.</p>
+    </div>
+    <div class="chat reveal" role="img" aria-label="Example chat with an AI assistant using Groundskeeper">
+      <div class="msg me">What's been eating my disk this week?</div>
+      <div class="tool">history &middot; runs: 4</div>
+      <div class="msg ai">Free space dropped 4.3 GB since Thursday. Most of it is the Homebrew cache (+2.9 GB) and <span style="font-family:var(--mono);font-size:.88em">demo-app/target</span> (+1.1 GB). Both are tagged safe; <span style="font-family:var(--mono);font-size:.88em">brew cleanup --prune=all</span> clears the first.</div>
+    </div>
+  </div>
+</section>
+
+<section class="install" id="install" style="padding-top:40px">
+  <div class="wrap">
+    <p class="eyebrow">Install</p>
+    <h2>Up and running in a minute</h2>
+    <p class="sub"><code>make install</code> puts <code>gk</code> in <code>~/bin</code> and schedules the twice-weekly scan. <code>gk doctor</code> checks the rest.</p>
+    <div class="reqs"><span class="chip">macOS 26</span><span class="chip">Xcode Command Line Tools</span><span class="chip">Go</span></div>
+    <div class="code reveal">
+      <button class="copy" type="button">Copy</button>
+<pre id="cmds"><span class="p">$ </span>git clone https://github.com/shaynemeyer/groundskeeper.git
+<span class="p">$ </span>cd groundskeeper
+<span class="p">$ </span>make install
+<span class="p">$ </span>gk doctor
+<span class="p">$ </span>gk --open   <span class="c"># scan and open the report</span></pre>
+    </div>
+    <p class="sub" style="margin:28px auto 0;font-size:1rem">Then read the <a href="https://github.com/shaynemeyer/groundskeeper/blob/main/docs/user-guide.md">user guide</a> for Full Disk Access, cleaning up, the iPhone and privacy.</p>
   </div>
 </section>
 
 <footer>
-  <p>Groundskeeper is open source on <a href="https://github.com/shaynemeyer/groundskeeper">GitHub</a>. It is in early development; see the <a href="https://github.com/shaynemeyer/groundskeeper/blob/main/docs/user-guide.md">user guide</a> for what works today.</p>
+  <div class="wrap">
+    <div>
+      <p style="margin:0 0 6px"><b style="font-family:var(--mono);color:var(--text)">groundskeeper</b> is open source on <a href="https://github.com/shaynemeyer/groundskeeper">GitHub</a>.</p>
+      <p style="margin:0">Early development. The <a href="https://github.com/shaynemeyer/groundskeeper/blob/main/docs/user-guide.md">user guide</a> covers what works today.</p>
+    </div>
+<pre aria-hidden="true"> /\ _______ /\
+ \ /_______\ /     All tidy!
+ (( @ )=( @ ))     Nothing's deleted
+  \   (_)   /      until you say so.
+   `-.___.-'</pre>
+  </div>
 </footer>
 
-</div>
+<script>document.documentElement.classList.add("js");
+const leafColors = ["#B8701E", "#D9922E", "#C9462B", "#6F8F3A"];
+const leaves = document.getElementById("leaves");
+for (let i = 0; i < 14; i++) {
+  const el = document.createElement("div");
+  el.className = "leaf";
+  el.style.left = Math.random() * 100 + "%";
+  el.style.animationDuration = 9 + Math.random() * 9 + "s";
+  el.style.animationDelay = -Math.random() * 18 + "s";
+  el.style.scale = .6 + Math.random() * .8;
+  el.innerHTML = `<svg viewBox="0 0 24 24"><path fill="${leafColors[i % 4]}" d="M12 2C6 6 4 12 6 18c2 3 6 4 6 4s4-1 6-4c2-6 0-12-6-16z"/><path d="M12 6v15" stroke="rgba(0,0,0,.25)" stroke-width="1.2"/></svg>`;
+  leaves.appendChild(el);
+}
+
+const io = new IntersectionObserver(entries => entries.forEach(e => {
+  if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+}), { threshold: .12 });
+document.querySelectorAll(".reveal").forEach((el, i) => {
+  el.style.transitionDelay = (i % 3) * 80 + "ms";
+  io.observe(el);
+});
+
+document.querySelector(".copy").addEventListener("click", e => {
+  const text = document.getElementById("cmds").innerText.replace(/^\$ /gm, "").replace(/\s+#.*$/gm, "");
+  navigator.clipboard.writeText(text).then(() => {
+    e.target.textContent = "Copied";
+    setTimeout(() => e.target.textContent = "Copy", 1500);
+  });
+});
+</script>
 </body>
 </html>
