@@ -2,6 +2,46 @@
 
 One entry per build step from [the plan](groundskeeper-plan.md): what was built, decisions made, problems found and how they were proven, and what is still open. Newest first.
 
+## Step 18 spike: Homebrew tap
+
+Answers to the four questions in the [Homebrew tap plan](homebrew-tap-plan.md#spike-about-half-a-day). Tried on Homebrew 7.0.11 with a throwaway local tap (`shaynemeyer/gkspike`) building a `git archive` of `main`, and a small probe binary that prints `os.Executable()` and whether it can list `~/Downloads` (a count only). The tap, formula and probe files were removed afterwards.
+
+### Answers
+
+- **`os.Executable()` returns the path the binary was started from, without resolving symlinks.** Run as `linkbin/gk`, it printed `linkbin/gk`; `filepath.EvalSymlinks` gave the Cellar-style path. So `gk schedule on` run as `/opt/homebrew/bin/gk` writes the stable link path, and `filepath.Dir(os.Executable())` finds `photos-helper` beside it in both install routes.
+- **SwiftPM needs `--disable-sandbox` inside Homebrew.** Without it, `swift build` failed with `sandbox-exec: sandbox_apply: Operation not permitted` (Homebrew already sandboxes the build). With it, the formula built both binaries, linked `gk`, and `brew test` passed. Homebrew installed its `go` 1.27.3 as a build dependency.
+- **The Command Line Tools are enough.** With `DEVELOPER_DIR=/Library/Developer/CommandLineTools` (Swift 6.4), `swift build --disable-sandbox -c release` built `photos-helper`. No full Xcode needed.
+- **`brew audit --strict --new`** flagged only `version 0.0.1 is redundant with version scanned from URL`, an artifact of the spike's file URL. It didn't require a `license`.
+- **Homebrew warned that `~/bin` shadows `/opt/homebrew/bin`** with both installs present, so plain `gk` ran the `make install` copy. Step 3 (`doctor` follows the running binary) should catch this.
+
+### Full Disk Access across upgrades: partly answered
+
+Every test ran the probe as a launchd agent (`RunAtLoad`), since a command run from a terminal borrows the terminal's access. Go's linker signs binaries ad hoc (`codesign`: `adhoc,linker-signed`).
+
+| Test | Grant | Situation | Result |
+| --- | --- | --- | --- |
+| Baseline | none | probe behind a link | blocked in `open()` (`sample`) until someone answered the Downloads prompt (Allow) |
+| A | Downloads, from the prompt | same binary | allowed |
+| B | Downloads, from the prompt | rebuilt at the same path | allowed |
+| C | Downloads, from the prompt | new build in a new folder behind the same link | allowed |
+| D (control) | Downloads, from the prompt | same code at an unrelated path | denied |
+| E | Full Disk Access, added with + on the link | same binary | allowed |
+| F | Full Disk Access, added with + on the link | new build in a new folder, old folder removed, link moved (like `brew upgrade`) | blocked on a prompt |
+
+- A Downloads grant from the prompt follows the path launchd runs (the link): C allowed, D denied.
+- **A Full Disk Access grant added in System Settings did not survive the simulated upgrade (F).** So with Homebrew, users would probably need to grant Full Disk Access again after each `brew upgrade`. Not yet proven with a real `brew upgrade`.
+- Two follow-up tests (a different build put back at the granted folder, run directly and through the link) were blocked and denied. The denial is muddied by a Don't Allow answered for F, so they don't show what the grant is keyed to.
+- The real `gk` disagrees in part: the scheduled run on 29 October, the day after a `make install` rebuild, read `~/Downloads` with nothing skipped. Either the grant survives a rebuild in place but not a new folder, or something else differs. Not proven.
+
+### Side finding
+
+- **A scheduled run can block on a permission prompt.** The ungranted probe sat inside `open()` until the prompt was answered. The 29 October scheduled scan took 2,073 s, 2,064 s of it in the Caches scanner with 13 skipped paths. That's a lead for the unexplained slow overnight scan in [next steps](next-steps.md#3-small-known-issues), not a proven cause.
+
+### Still open
+
+- Full Disk Access after a real `brew upgrade`: install the formula from a local tap, grant `/opt/homebrew/bin/groundskeeper`, kickstart the schedule, upgrade to a new tarball, kickstart again.
+- Whether the Caches scanner's long run on 29 October was a permission prompt.
+
 ## Fix: tool calls the SDK refuses are logged too
 
 ### Problem
