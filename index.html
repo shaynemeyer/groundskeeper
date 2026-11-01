@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Groundskeeper</title>
+<meta name="description" content="A macOS terminal tool that finds disk space you can reclaim on your Mac and a connected iPhone. Read-only scans, nothing leaves your Mac.">
+<link rel="icon" href="img/rook.jpg">
+<style>
+:root {
+  --green: #2F5D3A; --green-dark: #1E3B25; --amber: #D9922E; --charcoal: #2B2A28;
+  --bg: #F3EBDD; --surface: #FBF7EF; --text: #2B2A28; --muted: #5E5850; --line: #DDD2BF;
+  --accent: var(--green); --code-bg: #2B2A28; --code-text: #F3EBDD;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1C1B19; --surface: #252421; --text: #F3EBDD; --muted: #B5ADA0; --line: #3A3834;
+    --accent: #7FB08A; --code-bg: #121110; --code-text: #F3EBDD;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+a { color: var(--accent); }
+code, pre, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+h1, h2, h3 { line-height: 1.2; }
+h2 { font-size: 1.8rem; margin: 0 0 .5rem; }
+section { padding: 64px 0; border-top: 1px solid var(--line); }
+
+header.hero { padding: 72px 0 56px; display: grid; grid-template-columns: 1fr auto; gap: 40px; align-items: center; }
+.hero h1 { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: clamp(2.2rem, 6vw, 3.4rem); margin: 0 0 .3em; }
+.hero p.lead { font-size: 1.25rem; color: var(--muted); margin: 0 0 1.5rem; max-width: 34em; }
+.rook { width: 220px; height: 220px; border-radius: 50%; display: block; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+.btn.primary { background: var(--green); color: #F3EBDD; }
+.btn.secondary { border: 1px solid var(--line); color: var(--text); background: var(--surface); }
+
+pre { background: var(--code-bg); color: var(--code-text); padding: 18px 20px; border-radius: 10px; overflow-x: auto; font-size: .92rem; line-height: 1.5; margin: 0; }
+pre .c { color: #9C9488; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.card h3 { margin: 0 0 .4rem; font-size: 1.05rem; }
+.card p { margin: 0; color: var(--muted); font-size: .95rem; }
+
+.shot { margin: 28px 0 0; }
+.shot img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.shot figcaption { color: var(--muted); font-size: .9rem; margin-top: 8px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.tag { font-family: ui-monospace, Menlo, monospace; font-size: .85rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
+.tag.safe { background: var(--green); color: #F3EBDD; }
+.tag.review { background: var(--amber); color: var(--charcoal); }
+.tag.keep { background: var(--charcoal); color: #F3EBDD; border: 1px solid var(--line); }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; align-items: start; }
+.steps ol { margin: 0; padding-left: 1.2em; }
+.steps li { margin-bottom: .6em; }
+
+footer { padding: 40px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+
+@media (max-width: 720px) {
+  header.hero { grid-template-columns: 1fr; padding-top: 40px; }
+  .rook { width: 140px; height: 140px; order: -1; }
+  .two { grid-template-columns: 1fr; }
+  section { padding: 48px 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div>
+    <h1>groundskeeper</h1>
+    <p class="lead">Keep your Mac's disk, and a connected iPhone, free of clutter. Twice a week Rook scans for space you can reclaim and writes a report. Nothing is deleted until you say so.</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn secondary" href="https://github.com/shaynemeyer/groundskeeper">View on GitHub</a>
+      <a class="btn secondary" href="https://github.com/shaynemeyer/groundskeeper/blob/main/docs/user-guide.md">User guide</a>
+    </div>
+  </div>
+  <img class="rook" src="img/rook.jpg" alt="Rook, the Groundskeeper raccoon, in a hard hat">
+</header>
+
+<section>
+  <h2>Find the gigabytes hiding on your Mac</h2>
+  <p>Groundskeeper (<code>gk</code>) is a terminal tool for macOS. It measures where your space went and tells you what is safe to clear.</p>
+  <div class="grid">
+    <div class="card"><h3>Caches</h3><p>Homebrew, npm, Go, pip and the rest, with the command to clear each one.</p></div>
+    <div class="card"><h3>AI models</h3><p>Ollama, Hugging Face and LM Studio models you may have forgotten about.</p></div>
+    <div class="card"><h3>Build artifacts</h3><p>Stale <code>target</code>, <code>node_modules</code> and virtual environments in old projects.</p></div>
+    <div class="card"><h3>Toolchains and containers</h3><p>Old SDKs, toolchain versions and container images.</p></div>
+    <div class="card"><h3>Downloads and browsers</h3><p>Old downloads and browser caches, never cookies, history or passwords.</p></div>
+    <div class="card"><h3>Unused apps</h3><p>Apps on the Mac, and on your iPhone, that you probably don't use.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>One report, twice a week</h2>
+  <p>launchd runs a scan on Monday and Thursday mornings, sends a notification, and writes an HTML report: free space, what's growing fastest, and every item with its size, a safety tag and a suggested command.</p>
+  <figure class="shot">
+    <img src="img/report-top.png" alt="The top of a Groundskeeper report showing free space, growing items and caches" loading="lazy">
+    <figcaption>The report, from made-up data.</figcaption>
+  </figure>
+  <div class="tags">
+    <span class="tag safe">SAFE</span><span class="tag review">REVIEW</span><span class="tag keep">KEEP</span>
+  </div>
+  <p>Every item is tagged so you know at a glance what can go, what needs a look, and what to leave alone.</p>
+</section>
+
+<section>
+  <h2>Your iPhone too</h2>
+  <p>Plug an iPhone in over USB and <code>gk iphone</code> adds its apps, shared files and duplicate photos to the report. <code>gk review photos</code> steps through groups of similar shots, marks the best one in each to keep, and shows thumbnails inline in Ghostty.</p>
+  <div class="two">
+    <figure class="shot"><img src="img/report-iphone.png" alt="The iPhone section of the report" loading="lazy"><figcaption>Apps and storage on the phone.</figcaption></figure>
+    <figure class="shot"><img src="img/report-photos.png" alt="The duplicate photos section of the report" loading="lazy"><figcaption>Groups of duplicate and near-duplicate photos.</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>Careful by design</h2>
+  <div class="grid">
+    <div class="card"><h3>Scans are read-only</h3><p>The report only suggests commands. Hints are shown, never run.</p></div>
+    <div class="card"><h3>Dry run first</h3><p>Every <code>clean</code> command shows what it would do unless you add <code>--apply</code>. Files go to the Trash.</p></div>
+    <div class="card"><h3>Nothing leaves your Mac</h3><p>No network requests, no telemetry, no update checks. The only connection is USB to your own iPhone.</p></div>
+    <div class="card"><h3>Sizes, not contents</h3><p>Scanners stat files and add up sizes. They never open cookies, history, keychains or messages.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Ask an AI assistant</h2>
+  <p><code>gk mcp</code> serves three read-only <a href="https://modelcontextprotocol.io">MCP</a> tools, <code>scan</code>, <code>history</code> and <code>stats</code>, so an assistant can answer "what's using my disk?". It can't clean anything. Use a local Ollama model to keep results on your Mac, or Claude Desktop if you're fine with the paths going to Anthropic.</p>
+</section>
+
+<section id="install">
+  <h2>Install</h2>
+  <div class="steps">
+    <div>
+      <p>Groundskeeper builds from source. You need:</p>
+      <ol>
+        <li>macOS 26</li>
+        <li>Xcode Command Line Tools</li>
+        <li>Go</li>
+      </ol>
+      <p><code>make install</code> puts <code>gk</code> in <code>~/bin</code> and schedules the twice-weekly scan. <code>gk doctor</code> checks Full Disk Access and the rest of the setup.</p>
+    </div>
+<pre><span class="c"># build and install</span>
+git clone https://github.com/shaynemeyer/groundskeeper.git
+cd groundskeeper
+make install
+gk doctor
+
+<span class="c"># scan now and open the report</span>
+gk scan
+
+<span class="c"># clear browser caches (dry run, then for real)</span>
+gk clean browsers
+gk clean browsers --apply</pre>
+  </div>
+</section>
+
+<footer>
+  <p>Groundskeeper is open source on <a href="https://github.com/shaynemeyer/groundskeeper">GitHub</a>. It is in early development; see the <a href="https://github.com/shaynemeyer/groundskeeper/blob/main/docs/user-guide.md">user guide</a> for what works today.</p>
+</footer>
+
+</div>
+</body>
+</html>
