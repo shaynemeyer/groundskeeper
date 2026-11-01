@@ -73,3 +73,7 @@ make run                          # scan and open the report
 - [Implementation plan](docs/groundskeeper-plan.md): architecture, scanners, security, logging and build order
 - [Rook design brief](docs/rook-design-brief.md): the mascot, palette and voice
 - [Build log](docs/build-log.md): what each build step delivered, decisions and open items
+
+## License
+
+[MIT](LICENSE), including the Rook mascot artwork.
