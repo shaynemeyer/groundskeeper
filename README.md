@@ -76,4 +76,4 @@ make run                          # scan and open the report
 
 ## License
 
-[MIT](LICENSE), including the Rook mascot artwork.
+[MIT](LICENSE), except the Rook mascot artwork in `assets/`, which is all rights reserved ([details](assets/LICENSE)).

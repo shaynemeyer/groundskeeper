@@ -28,7 +28,7 @@ Checked against Homebrew 7.0.11 on this Mac.
 - **Completions:** `generate_completions_from_executable` takes `shell_parameter_format: :cobra` and `shells:` (`Library/Homebrew/formula.rb`, `utils/shell_completion.rb`).
 - **Tap layout:** the repository is `shaynemeyer/homebrew-tap` with formulae in `Formula/`. Users install with `brew install shaynemeyer/tap/groundskeeper`. Docs: [How to create and maintain a tap](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap).
 - **The code assumes `~/bin`.** `doctor.HelperPath` (used by `iphone`, `review photos` and `clean photos`), `doctor`'s install and schedule checks, the LaunchAgent template and `gk help schedule` all name `~/bin/groundskeeper`.
-- **Licence:** MIT (`LICENSE`), Rook artwork included, so the formula uses `license "MIT"`.
+- **Licence:** MIT (`LICENSE`), so the formula uses `license "MIT"`. The Rook artwork in `assets/` is excluded (`assets/LICENSE`); the build doesn't use it.
 
 ## Spike (about half a day)
 
@@ -51,7 +51,7 @@ Each step is small, tested, and leaves `make install` working.
 2. **`gk schedule on | off | status`** (Setup group). `on` writes `~/Library/LaunchAgents/com.lot86.groundskeeper.plist` from an embedded template with the binary's stable path (spike question 2). It creates the launchd log with `0600` first, then runs `launchctl bootout` and `bootstrap` through `exec.CommandContext` with separate arguments. `off` boots it out and removes the plist. `status` says whether it's loaded and which binary it runs. `make install` calls `groundskeeper schedule on` instead of its own `sed` and `launchctl` lines, so there's one code path. Tests use a fake home and a `launchctl` runner hook: the plist is valid (`plutil -lint`), has both calendar entries and the expected binary, is `0644`, and no `sh -c` is used. Help, the safety note, examples, `gk help schedule` and the user guide are updated in the same change, and `guide_test.go` checks them.
 3. **`doctor` follows the running binary.** The install check looks at the running executable, not `~/bin/groundskeeper`. The schedule check reads the plist's `ProgramArguments[0]` and warns if that file is missing (for example after `brew uninstall` without `gk schedule off`) or differs from the running binary (both `make install` and Homebrew installed). The Full Disk Access advice names the path the spike shows is the one to grant.
 4. **Completion for both names in Go.** `groundskeeper completion zsh` emits `#compdef groundskeeper gk` itself, so the `sed` in the Makefile goes and the formula needs no `inreplace`. Test: the first two lines name both commands.
-5. **Licence** (done): MIT, in `LICENSE`, covering the Rook artwork too, and named in the README.
+5. **Licence** (done): MIT, in `LICENSE`, named in the README. The Rook artwork in `assets/` is all rights reserved (`assets/LICENSE`).
 6. **Tag `v0.10.0`** and check the GitHub tarball builds: `go build` with `-X main.version=0.10.0`, because the tarball has no `.git` for `git describe`.
 
 ### In `shaynemeyer/homebrew-tap`
@@ -120,7 +120,7 @@ Automating step 2 with a GitHub Action is possible later. It's part of the CI de
 
 ## Open decisions
 
-- ~~Licence~~: decided, MIT, including the Rook artwork.
+- ~~Licence~~: decided, MIT, with the Rook artwork excluded.
 - **Tap name:** `homebrew-tap` (room for future tools) or `homebrew-groundskeeper`.
 - **Schedule on install:** the formula can't load a LaunchAgent itself (Homebrew has no post-install step for user agents), so the user runs `gk schedule on`. Should `gk doctor` suggest it when the schedule is off?
 - **Pre-built bottles or signed releases:** later, only if people use it. Both bring back Developer ID signing and notarization ($99 a year).
